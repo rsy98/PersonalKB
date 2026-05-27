@@ -333,7 +333,8 @@ class AIService:
                 'model': result['model'], 'provider': result['provider'],
             }
         # _parse_json_response wraps bare arrays in {'items': ...}
-        suggestions = parsed.get('items', parsed) if isinstance(parsed.get('items'), list) else parsed.get('suggestions', [])
+        items_list = parsed.get('items')
+        suggestions = items_list if isinstance(items_list, list) else parsed.get('suggestions', [])
         if not isinstance(suggestions, list):
             suggestions = []
         return {
@@ -367,7 +368,9 @@ class AIService:
                 'category': category, 'gaps': [], 'existing_count': len(items), 'gap_count': 0,
                 'model': result['model'], 'provider': result['provider'],
             }
-        gaps = parsed.get('items', parsed) if isinstance(parsed.get('items'), list) else parsed.get('gaps', [])
+        # _parse_json_response wraps bare arrays in {'items': ...}
+        items_list = parsed.get('items')
+        gaps = items_list if isinstance(items_list, list) else parsed.get('gaps', [])
         if not isinstance(gaps, list):
             gaps = []
         return {
