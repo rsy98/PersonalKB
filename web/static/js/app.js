@@ -1603,7 +1603,74 @@ function addFromGap(topic, category) {
 }
 
 // ================================================================
-// 16. Initialization
+// 16. AI Learning Path Generation (Review Panel)
+// ================================================================
+
+async function generateLearningPath() {
+    const goal = document.getElementById('learningGoal').value.trim();
+    if (!goal) { showToast('请输入学习目标', 'warning'); return; }
+
+    const container = document.getElementById('learningPathContent');
+    container.innerHTML = '<div class="loading"><div class="spinner"></div>AI 正在设计学习路径...</div>';
+
+    try {
+        const result = await apiService.generateLearningPath(goal);
+        renderLearningPath(result);
+    } catch (e) {
+        container.innerHTML = '<div class="empty-state"><p>生成失败，请重试</p></div>';
+    }
+}
+
+function renderLearningPath(result) {
+    const container = document.getElementById('learningPathContent');
+    if (!result.stages || result.stages.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>无法生成学习路径，请尝试更具体的目标</p></div>';
+        return;
+    }
+
+    let html = `<div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary);">
+        学习目标: <strong>${escapeHtml(result.goal)}</strong> |
+        预计总时长: <strong>${result.total_estimated_hours || 'N/A'} 小时</strong>
+        ${result.provider ? ' | via ' + escapeHtml(result.provider) + '/' + escapeHtml(result.model || '') : ''}
+    </div>`;
+
+    html += '<div class="learning-timeline">';
+    result.stages.forEach(stage => {
+        const concepts = (stage.concepts || []).map(c =>
+            `<span class="timeline-concept">${escapeHtml(c)}</span>`
+        ).join('');
+        const prereqs = (stage.prerequisites && stage.prerequisites.length > 0)
+            ? `<div class="timeline-prereqs">前置: ${escapeHtml(stage.prerequisites.join(' → '))}</div>` : '';
+        const items = (stage.item_ids || []).map(id =>
+            `<span class="timeline-item-link" onclick="showItemDetail(${id})">📄 #${id}</span>`
+        ).join('');
+
+        html += `
+        <div class="timeline-stage" data-order="${stage.order || '?'}">
+            <div class="timeline-stage-header">
+                <span class="timeline-stage-title">${escapeHtml(stage.title || '')}</span>
+                <span class="timeline-stage-hours">${stage.estimated_hours || '?'}h</span>
+            </div>
+            ${prereqs}
+            <div class="timeline-concepts">${concepts}</div>
+            ${items ? `<div class="timeline-items">${items}</div>` : ''}
+            ${stage.mastery_criteria ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:8px;">✅ ${escapeHtml(stage.mastery_criteria)}</div>` : ''}
+        </div>`;
+    });
+    html += '</div>';
+
+    if (result.missing_topics && result.missing_topics.length > 0) {
+        html += `<div class="timeline-missing-topics">
+            <h5>📌 建议补充学习的内容</h5>
+            ${result.missing_topics.map(t => `<span class="timeline-item-link missing">${escapeHtml(t)}</span>`).join(' ')}
+        </div>`;
+    }
+
+    container.innerHTML = html;
+}
+
+// ================================================================
+// 17. Initialization
 // ================================================================
 async function init() {
     // Restore last panel from URL hash
