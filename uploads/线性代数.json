@@ -1,0 +1,418 @@
+[
+  {
+    "title": "行列式的定义与性质",
+    "content": "行列式是一个与其矩阵对应的标量值。对于2阶矩阵 $$A = \\\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$$，其行列式 $$det(A) = ad - bc$$。n阶行列式可按行（列）展开计算。主要性质包括：行列式与转置行列式相等；交换两行（列）行列式变号；数乘某行（列）等于数乘行列式；若两行（列）成比例，则行列式为0。",
+    "tags": ["行列式", "基础", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "矩阵的基本运算",
+    "content": "矩阵加法：对应元素相加，要求同阶矩阵。矩阵数乘：数乘以矩阵每个元素。矩阵乘法：若A是m×n矩阵，B是n×p矩阵，则乘积C=AB是m×p矩阵，其中 $$c_{ij} = \\sum_{k=1}^n a_{ik}b_{kj}$$。矩阵乘法不满足交换律。",
+    "tags": ["矩阵", "运算", "基础"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "逆矩阵",
+    "content": "对于n阶方阵A，若存在n阶方阵B使得AB=BA=I（单位矩阵），则称A可逆，B为A的逆矩阵，记作 $$A^{-1}$$。逆矩阵求法：$$A^{-1} = \\frac{1}{det(A)}adj(A)$$，其中adj(A)为A的伴随矩阵。",
+    "tags": ["矩阵", "逆矩阵", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "初等矩阵与初等变换",
+    "content": "初等矩阵是单位矩阵经过一次初等变换得到的矩阵。三类初等变换：交换两行（列）；某行（列）乘以非零常数；某行（列）的倍数加到另一行（列）。初等矩阵左乘对应行变换，右乘对应列变换。",
+    "tags": ["矩阵", "变换", "基础"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 4
+  },
+  {
+    "title": "矩阵的秩",
+    "content": "矩阵A的秩是A的行（列）向量组的极大线性无关组所含向量的个数，记作rank(A)或r(A)。秩的性质：$$rank(A) = rank(A^T)$$，$$rank(AB) \\leq min(rank(A), rank(B))$$。",
+    "tags": ["矩阵", "秩", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "线性方程组的解",
+    "content": "对于线性方程组Ax=b，解的情况：当rank(A) = rank([A|b]) = n时，有唯一解；当rank(A) = rank([A|b]) < n时，有无穷多解；当rank(A) < rank([A|b])时，无解。齐次方程组Ax=0总有零解。",
+    "tags": ["方程组", "解的结构", "核心"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "向量空间",
+    "content": "向量空间是由向量组成的集合，满足加法和数乘封闭性，且满足8条运算律。常见的向量空间：$$R^n$$空间、矩阵空间、多项式空间等。子空间是向量空间的非空子集，且对加法和数乘封闭。",
+    "tags": ["向量空间", "基础概念", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "线性相关与线性无关",
+    "content": "向量组α₁,α₂,...,αₙ线性相关是指存在不全为零的数k₁,k₂,...,kₙ使得 $$k_1α_1 + k_2α_2 + ... + k_nα_n = 0$$。否则线性无关。线性相关的充要条件是其中至少有一个向量可由其余向量线性表示。",
+    "tags": ["向量", "线性关系", "核心"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "基与维数",
+    "content": "向量空间V的基是一个线性无关的向量组，且V中任何向量都可由该向量组线性表示。维数是基中所含向量的个数，记作dim(V)。标准基：$$R^n$$的标准基为e₁=(1,0,...,0), e₂=(0,1,...,0), ..., eₙ=(0,0,...,1)。",
+    "tags": ["向量空间", "基", "维数", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "坐标变换",
+    "content": "设向量α在基ε₁,ε₂,...,εₙ下的坐标为X，在基η₁,η₂,...,ηₙ下的坐标为Y，基变换矩阵为P（满足(η₁,η₂,...,ηₙ) = (ε₁,ε₂,...,εₙ)P），则坐标变换公式：$$X = PY$$。",
+    "tags": ["基变换", "坐标", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "线性变换",
+    "content": "线性变换T: V→W是满足 $$T(α+β) = T(α)+T(β)$$ 和 $$T(kα) = kT(α)$$ 的映射。在给定基下，线性变换可用矩阵表示。若α在基下的坐标为X，则T(α)的坐标为AX，其中A为变换矩阵。",
+    "tags": ["线性变换", "核心概念", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "特征值与特征向量",
+    "content": "设A是n阶方阵，若存在数λ和非零向量ξ使得 $$Aξ = λξ$$，则称λ是A的特征值，ξ是A的属于λ的特征向量。特征方程：$$det(A-λI) = 0$$。特征多项式：$$f(λ) = det(A-λI)$$。",
+    "tags": ["特征值", "特征向量", "核心"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "相似矩阵",
+    "content": "设A、B为n阶方阵，若存在可逆矩阵P使得 $$B = P^{-1}AP$$，则称A与B相似。相似矩阵有相同的特征多项式、特征值、行列式和迹。矩阵可对角化的充要条件是有n个线性无关的特征向量。",
+    "tags": ["相似", "对角化", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "二次型",
+    "content": "n元二次齐次多项式称为二次型，一般形式：$$f(x_1,x_2,...,x_n) = \\sum_{i=1}^n\\sum_{j=1}^n a_{ij}x_ix_j$$，其中a_{ij}=a_{ji}。可用对称矩阵A表示为 $$f(X) = X^TAX$$。",
+    "tags": ["二次型", "矩阵表示", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 4
+  },
+  {
+    "title": "合同矩阵",
+    "content": "设A、B为n阶实对称矩阵，若存在可逆矩阵C使得 $$B = C^TAC$$，则称A与B合同。合同关系保持矩阵的对称性和惯性指数。",
+    "tags": ["合同", "二次型", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "正定矩阵",
+    "content": "实对称矩阵A称为正定的，如果对任意非零向量X都有 $$X^TAX > 0$$。判定条件：所有顺序主子式大于0；所有特征值大于0；存在可逆矩阵C使A=CᵀC。",
+    "tags": ["正定", "矩阵", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 4
+  },
+  {
+    "title": "内积空间",
+    "content": "定义了内积的实向量空间称为欧几里得空间。内积是满足对称性、线性性和正定性的二元函数。标准内积：$$(α,β) = α_1β_1 + α_2β_2 + ... + α_nβ_n$$。",
+    "tags": ["内积", "欧氏空间", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 4
+  },
+  {
+    "title": "正交性与正交基",
+    "content": "向量α与β正交当且仅当(α,β)=0。向量组中两两正交且不含零向量的向量组称为正交向量组。由单位向量组成的正交向量组称为标准正交基。Schmidt正交化方法可将线性无关向量组化为正交向量组。",
+    "tags": ["正交", "正交化", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "正交矩阵",
+    "content": "满足 $$Q^TQ = I$$ 的实方阵称为正交矩阵。性质：行（列）向量组是标准正交基；$$Q^{-1} = Q^T$$；保持内积和长度不变；行列式的值为±1。",
+    "tags": ["正交矩阵", "重要概念"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 4
+  },
+  {
+    "title": "对称矩阵的性质",
+    "content": "实对称矩阵的特征值都是实数，属于不同特征值的特征向量必正交，必可正交相似对角化。即存在正交矩阵Q使得 $$Q^{-1}AQ = Q^TAQ = diag(λ_1,λ_2,...,λ_n)$$。",
+    "tags": ["对称矩阵", "特征值", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "矩阵的迹",
+    "content": "n阶方阵A的迹是其主对角线元素之和，记作tr(A)。性质：$$tr(A+B) = tr(A)+tr(B)$$；$$tr(kA) = k·tr(A)$$；$$tr(AB) = tr(BA)$$；相似矩阵有相同的迹。",
+    "tags": ["矩阵", "迹", "性质"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 4
+  },
+  {
+    "title": "分块矩阵",
+    "content": "将矩阵用纵线和横线分成若干小块，每块称为子矩阵。分块矩阵的运算：加法、数乘、乘法与普通矩阵类似，但要求子矩阵的划分满足运算条件。分块对角矩阵的行列式等于各对角块行列式的乘积。",
+    "tags": ["矩阵", "分块", "技巧"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "矩阵的范数",
+    "content": "矩阵范数是满足正定性、齐次性、三角不等式和次乘性的实数函数。常见范数：1-范数（列和范数）$$||A||_1 = max_j\\sum_{i=1}^n |a_{ij}|$$；∞-范数（行和范数）$$||A||_∞ = max_i\\sum_{j=1}^n |a_{ij}|$$；2-范数（谱范数）$$||A||_2 = \\sqrt{λ_{max}(A^TA)}$$。",
+    "tags": ["矩阵", "范数", "数值分析"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 3
+  },
+  {
+    "title": "广义逆矩阵",
+    "content": "对于m×n矩阵A，若存在n×m矩阵G满足AGA=A，则称G为A的广义逆矩阵，记作A⁻。Moore-Penrose逆矩阵A⁺是满足4个Penrose条件的唯一广义逆。",
+    "tags": ["广义逆", "矩阵", "应用"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 2
+  },
+  {
+    "title": "行列式的拉普拉斯展开",
+    "content": "n阶行列式等于某一行（列）的各元素与其对应的代数余子式乘积之和：$$det(A) = \\sum_{j=1}^n a_{ij}A_{ij}$$（按第i行展开）或 $$det(A) = \\sum_{i=1}^n a_{ij}A_{ij}$$（按第j列展开），其中A_{ij}是元素a_{ij}的代数余子式。",
+    "tags": ["行列式", "展开定理", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 4
+  },
+  {
+    "title": "克莱姆法则",
+    "content": "对于n元线性方程组Ax=b，若系数矩阵A的行列式det(A)≠0，则方程组有唯一解：$$x_j = \\frac{det(A_j)}{det(A)}$$，其中A_j是用常数列b替换A的第j列得到的矩阵。",
+    "tags": ["方程组", "克莱姆法则", "解公式"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 4
+  },
+  {
+    "title": "矩阵的三角分解",
+    "content": "矩阵A可分解为下三角矩阵L和上三角矩阵U的乘积，即A=LU。若A的顺序主子式都不为0，则存在唯一的Doolittle分解（L为单位下三角矩阵）和Crout分解（U为单位上三角矩阵）。",
+    "tags": ["矩阵分解", "LU分解", "数值计算"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "QR分解",
+    "content": "任何实矩阵A都可以分解为正交矩阵Q和上三角矩阵R的乘积，即A=QR。QR分解可通过Gram-Schmidt正交化、Householder变换或Givens旋转实现。在求解最小二乘问题和特征值计算中有重要应用。",
+    "tags": ["矩阵分解", "QR分解", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "奇异值分解",
+    "content": "对于任意m×n实矩阵A，存在正交矩阵U（m×m）、V（n×n）和对角矩阵Σ（m×n）使得 $$A = UΣV^T$$，其中Σ的对角元σ₁≥σ₂≥...≥σᵣ>0称为A的奇异值，r=rank(A)。SVD在数据压缩、降维等领域有广泛应用。",
+    "tags": ["矩阵分解", "SVD", "核心"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 3
+  },
+  {
+    "title": "特征值的圆盘定理",
+    "content": "Gerschgorin圆盘定理：n阶矩阵A的每个特征值至少位于一个Gerschgorin圆盘 $$D_i = {z ∈ C: |z-a_{ii}| ≤ \\sum_{j≠i} |a_{ij}|}$$ 中。这为特征值定位提供了有效方法。",
+    "tags": ["特征值", "圆盘定理", "估计"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 3
+  },
+  {
+    "title": "Jordan标准形",
+    "content": "任何n阶复矩阵A都相似于一个Jordan形矩阵J，即存在可逆矩阵P使得 $$P^{-1}AP = J = diag(J_1(λ_1), J_2(λ_2), ..., J_k(λ_k))$$，其中J_i(λ_i)是以λ_i为特征值的Jordan块。Jordan标准形反映了矩阵的本质结构。",
+    "tags": ["Jordan形", "相似标准形", "高级"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 2
+  },
+  {
+    "title": "最小多项式",
+    "content": "矩阵A的最小多项式是首项系数为1的、使m(A)=0的次数最低的多项式m(λ)。最小多项式整除特征多项式，且与特征多项式有相同的根（可能重数不同）。",
+    "tags": ["最小多项式", "矩阵多项式", "理论"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 3
+  },
+  {
+    "title": "Cayley-Hamilton定理",
+    "content": "n阶矩阵A的特征多项式为f(λ)=det(λI-A)，则f(A)=0。即矩阵满足它自己的特征方程。这定理表明任何矩阵多项式都可以化为次数不超过n-1的多项式。",
+    "tags": ["Cayley-Hamilton", "矩阵多项式", "重要定理"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "向量范数",
+    "content": "向量范数是满足正定性、齐次性和三角不等式的实数函数。常见范数：1-范数 $$||x||_1 = \\sum_{i=1}^n |x_i|$$；2-范数（欧几里得范数）$$||x||_2 = \\sqrt{\\sum_{i=1}^n x_i^2}$$；∞-范数 $$||x||_∞ = max_i|x_i|$$；p-范数 $$||x||_p = (\\sum_{i=1}^n |x_i|^p)^{1/p}$$。",
+    "tags": ["向量", "范数", "度量"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 4
+  },
+  {
+    "title": "条件数",
+    "content": "矩阵A的条件数定义为 $$cond(A) = ||A||·||A^{-1}||$$（当A可逆时）。条件数反映了线性方程组Ax=b的解对A和b的扰动的敏感程度。条件数越大，问题越病态。",
+    "tags": ["条件数", "数值稳定性", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "正交补空间",
+    "content": "设W是欧氏空间V的子空间，V中与W的每个向量都正交的向量组成的集合称为W的正交补，记作W⊥。性质：$$V = W ⊕ W^⊥$$；$$(W^⊥)^⊥ = W$$；dim(W) + dim(W⊥) = dim(V)。",
+    "tags": ["正交补", "子空间", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "投影矩阵",
+    "content": "矩阵P称为投影矩阵如果P²=P（幂等性）。正交投影矩阵还满足Pᵀ=P（对称性）。向量x在子空间W上的正交投影为 $$proj_W(x) = Px$$，其中P是到W的正交投影矩阵。",
+    "tags": ["投影", "投影矩阵", "应用"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "最小二乘法",
+    "content": "对于超定方程组Ax=b（A为m×n矩阵，m>n），通常无精确解。最小二乘解是使残差平方和 $$||Ax-b||_2^2$$ 最小的x。正规方程组：$$A^TAx = A^Tb$$。当A列满秩时，有唯一解 $$x = (A^TA)^{-1}A^Tb$$。",
+    "tags": ["最小二乘", "应用", "重要"],
+    "category": "线性代数",
+    "importance_level": 5,
+    "understanding_level": 4
+  },
+  {
+    "title": "特征值的扰动分析",
+    "content": "研究矩阵元素发生微小变化时特征值的变化情况。对于对称矩阵，特征值的扰动受矩阵范数控制：若E是扰动矩阵，则A+E的特征值λᵢ与A的特征值μᵢ满足 $$|λ_i-μ_i| ≤ ||E||_2$$。",
+    "tags": ["特征值", "扰动分析", "敏感性"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 2
+  },
+  {
+    "title": "幂法与反幂法",
+    "content": "幂法是计算矩阵主特征值（模最大的特征值）及对应特征向量的迭代方法。反幂法是计算矩阵最小特征值及对应特征向量的方法，基于 $$(A-μI)^{-1}$$ 的幂迭代，收敛速度更快。",
+    "tags": ["特征值", "数值方法", "迭代"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 3
+  },
+  {
+    "title": "Householder变换",
+    "content": "Householder矩阵 $$H = I - 2uu^T/||u||^2$$ 是对称正交矩阵，具有反射性质。可用于矩阵的QR分解、三对角化等计算，是数值线性代数中的重要工具。",
+    "tags": ["正交变换", "数值计算", "重要"],
+    "category": "线性代数",
+    "importance_level": 4,
+    "understanding_level": 3
+  },
+  {
+    "title": "Givens旋转",
+    "content": "Givens旋转矩阵是在坐标平面(i,j)上的旋转矩阵，用于将矩阵的特定元素化为零。在QR分解和特征值计算中有应用，特别适合稀疏矩阵的处理。",
+    "tags": ["正交变换", "旋转", "数值方法"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 3
+  },
+  {
+    "title": "Krylov子空间",
+    "content": "由向量v, Av, A²v, ..., A^{k-1}v张成的子空间称为Krylov子空间K_k(A,v)。Krylov子空间方法是求解大型稀疏线性方程组和特征值问题的有效迭代方法。",
+    "tags": ["子空间", "迭代法", "大型问题"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 2
+  },
+  {
+    "title": "广义特征值问题",
+    "content": "求数λ和非零向量x使得Ax=λBx，其中A、B为n阶矩阵。当B可逆时化为标准特征值问题B⁻¹Ax=λx。在振动分析、量子力学等领域有重要应用。",
+    "tags": ["特征值", "广义问题", "应用"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 3
+  },
+  {
+    "title": "矩阵函数",
+    "content": "通过幂级数定义矩阵函数，如矩阵指数 $$e^A = \\sum_{k=0}^∞ \\frac{A^k}{k!}$$，矩阵对数，三角函数等。矩阵函数在微分方程、控制系统中有重要应用。",
+    "tags": ["矩阵函数", "应用", "理论"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 2
+  },
+  {
+    "title": "非负矩阵",
+    "content": "所有元素非负的矩阵称为非负矩阵。Perron-Frobenius定理描述了不可约非负矩阵的特征值性质：存在正实特征值（谱半径），对应正特征向量。",
+    "tags": ["非负矩阵", "特征值", "应用"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 2
+  },
+  {
+    "title": "Toeplitz矩阵",
+    "content": "每条对角线元素相等的矩阵，即a_{ij}只依赖于i-j。Toeplitz矩阵在信号处理、时间序列分析中常见，有快速算法。",
+    "tags": ["特殊矩阵", "应用", "结构"],
+    "category": "线性代数",
+    "importance_level": 2,
+    "understanding_level": 3
+  },
+  {
+    "title": "循环矩阵",
+    "content": "每行向量是前一行向量的循环移位得到的矩阵。循环矩阵可由离散傅里叶变换对角化，有快速算法。在图像处理、编码理论中有应用。",
+    "tags": ["特殊矩阵", "傅里叶分析", "应用"],
+    "category": "线性代数",
+    "importance_level": 2,
+    "understanding_level": 3
+  },
+  {
+    "title": "矩阵的伪逆",
+    "content": "对于任意m×n矩阵A，其Moore-Penrose伪逆A⁺是满足4个条件的唯一n×m矩阵：AA⁺A=A，A⁺AA⁺=A⁺，(AA⁺)ᵀ=AA⁺，(A⁺A)ᵀ=A⁺A。在最小二乘、病态问题求解中有应用。",
+    "tags": ["伪逆", "广义逆", "应用"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 2
+  },
+  {
+    "title": "张量积",
+    "content": "矩阵A（m×n）与B（p×q）的张量积（Kronecker积）是mp×nq的分块矩阵A⊗B，其中每个块a_{ij}B。性质：(A⊗B)(C⊗D)=AC⊗BD（当乘法可行时）。",
+    "tags": ["张量", "Kronecker积", "高级"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 2
+  },
+  {
+    "title": "矩阵的微分",
+    "content": "矩阵值函数对变量的导数。常见公式：$$d(AX)/dX = A^T$$，$$d(X^TAX)/dX = (A+A^T)X$$，$$d(tr(X^TAX))/dX = (A+A^T)X$$。在优化、机器学习中有重要应用。",
+    "tags": ["矩阵微分", "优化", "应用"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 2
+  },
+  {
+    "title": "特征值的极值性质",
+    "content": "对称矩阵A的特征值具有极值性质：最大特征值 $$λ_{max} = max_{x≠0} \\frac{x^TAx}{x^Tx}$$，最小特征值 $$λ_{min} = min_{x≠0} \\frac{x^TAx}{x^Tx}$$。这为特征值提供了变分特征。",
+    "tags": ["特征值", "极值", "变分原理"],
+    "category": "线性代数",
+    "importance_level": 3,
+    "understanding_level": 3
+  }
+]
