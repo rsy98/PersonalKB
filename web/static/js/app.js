@@ -1247,6 +1247,19 @@ async function showTags() {
 async function showCategoryItems(cat) {
     try {
         const items = await apiService.getCategoryItems(cat);
+        const gapContainer = document.getElementById('gapAnalysis');
+        if (gapContainer) {
+            gapContainer.style.display = '';
+            gapContainer.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                    <span style="font-size:13px;color:var(--text-secondary);">分类: <strong>${escapeHtml(cat)}</strong> (${items.length} 条)</span>
+                    <button class="btn btn-outline btn-sm" onclick="discoverGaps('${escapeHtml(cat)}')" id="btnGapAnalysis">
+                        🤖 AI 缺口分析
+                    </button>
+                </div>
+                <div id="gapResults"></div>
+            `;
+        }
         renderSearchResults(items);
     } catch (e) {}
 }
@@ -1524,7 +1537,73 @@ function clearSuggestions() {
 }
 
 // ================================================================
-// 15. Initialization
+// 15. AI Gap Analysis (Knowledge Management)
+// ================================================================
+
+async function discoverGaps(category) {
+    const btn = document.getElementById('btnGapAnalysis');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '分析中...';
+    }
+
+    try {
+        const result = await apiService.discoverGaps(category);
+        renderGapResults(result, category);
+    } catch (e) {}
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = '🤖 AI 缺口分析';
+    }
+}
+
+function renderGapResults(result, category) {
+    const container = document.getElementById('gapResults');
+    if (!container) return;
+    if (!result.gaps || result.gaps.length === 0) {
+        container.innerHTML = '<div style="padding:10px;font-size:13px;color:var(--text-secondary);">未发现明显知识缺口，该分类覆盖较完整。</div>';
+        return;
+    }
+    container.innerHTML = result.gaps.map(gap => {
+        const stars = Array.from({length: 5}, (_, i) => {
+            return `<span class="star${i < (gap.importance || 3) ? ' filled' : ''}">★</span>`;
+        }).join('');
+        const keywords = (gap.suggested_keywords || []).map(k =>
+            `<span class="kw-tag">${escapeHtml(k)}</span>`
+        ).join('');
+        return `
+        <div class="gap-card">
+            <div class="gap-card-body">
+                <div class="gap-card-topic">
+                    ${escapeHtml(gap.topic)}
+                    <span class="gap-importance">${stars}</span>
+                </div>
+                <div class="gap-card-reason">${escapeHtml(gap.reason || '')}</div>
+                ${keywords ? `<div class="gap-card-keywords">${keywords}</div>` : ''}
+            </div>
+            <div class="gap-card-action">
+                <button class="btn btn-primary btn-sm" onclick="addFromGap('${escapeHtml(gap.topic).replace(/'/g, "&#39;")}', '${escapeHtml(category).replace(/'/g, "&#39;")}')">添加</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function addFromGap(topic, category) {
+    const details = document.getElementById('aiExtractDetails');
+    if (details) details.open = true;
+    if (typeof switchExtractTab === 'function') switchExtractTab('text');
+    const textarea = document.getElementById('extractText');
+    if (textarea) {
+        textarea.value = `主题: ${topic}\n分类: ${category}\n\n`;
+        textarea.focus();
+    }
+    const extractSection = document.getElementById('aiExtractDetails');
+    if (extractSection) extractSection.scrollIntoView({ behavior: 'smooth' });
+    if (typeof switchPanel === 'function') switchPanel('knowledge');
+}
+
+// ================================================================
+// 16. Initialization
 // ================================================================
 async function init() {
     // Restore last panel from URL hash
