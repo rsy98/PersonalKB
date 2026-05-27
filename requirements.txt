@@ -3,3 +3,8 @@ jieba
 numpy
 pandas
 matplotlib
+pyyaml
+anthropic
+openai
+requests
+pytest

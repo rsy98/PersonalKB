@@ -4,11 +4,17 @@
 import sys
 import os
 from knowledge_manager import KnowledgeManager
+from ai import AIService, load_config
 
 class KnowledgeCLI:
     def __init__(self):
         self.manager = KnowledgeManager()
         self.running = True
+        try:
+            ai_config = load_config('config/ai.yaml')
+            self.ai_service = AIService(ai_config)
+        except Exception:
+            self.ai_service = None
 
     def print_menu(self):
         """显示主菜单"""

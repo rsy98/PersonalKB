@@ -12,8 +12,9 @@ import uuid
 from werkzeug.utils import secure_filename
 import chardet
 import tempfile
-from ai_service import ai_service
-# os.environ['DEEPSEEK_API_KEY'] = 'your_deepseek_api_key_here'
+from ai import AIService, load_config
+ai_config = load_config('config/ai.yaml')
+ai_service = AIService(ai_config)
 
 # 全局变量存储当前数据库
 _current_db = os.environ.get('CURRENT_DATABASE', 'knowledge.db')
@@ -6770,6 +6771,10 @@ def serve_uploaded_files(filename):
 def api_ai_analyze(item_id):
     """AI分析知识条目"""
     try:
+        data = request.get_json(silent=True) or {}
+        provider = data.get('provider')
+        model = data.get('model')
+
         manager = KnowledgeManager(_current_db)
         item = manager.get_item_by_id(item_id)
         if not item:
@@ -6780,7 +6785,8 @@ def api_ai_analyze(item_id):
             title=item.get('title', ''),
             content=item.get('content', ''),
             tags=tags,
-            category=item.get('category', '未分类')
+            category=item.get('category', '未分类'),
+            provider=provider, model=model
         )
 
         return jsonify(analysis)
@@ -6791,12 +6797,16 @@ def api_ai_analyze(item_id):
 def api_ai_generate_questions(item_id):
     """生成测试问题"""
     try:
+        data = request.get_json(silent=True) or {}
+        provider = data.get('provider')
+        model = data.get('model')
+
         manager = KnowledgeManager(_current_db)
         item = manager.get_item_by_id(item_id)
         if not item:
             return jsonify({'error': '条目不存在'}), 404
 
-        questions = ai_service.generate_questions(item.get('content', ''))
+        questions = ai_service.generate_questions(item.get('content', ''), provider=provider, model=model)
         return jsonify({'questions': questions})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -6807,7 +6817,9 @@ def api_ai_improve_writing():
     try:
         data = request.json
         content = data.get('content', '')
-        improved = ai_service.improve_writing(content)
+        provider = data.get('provider')
+        model = data.get('model')
+        improved = ai_service.improve_writing(content, provider=provider, model=model)
         return jsonify({'improved_content': improved})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -6820,6 +6832,8 @@ def api_ai_chat():
         question = data.get('question', '')
         item_id = data.get('item_id')
         chat_history = data.get('chat_history', [])  # 新增：聊天历史
+        provider = data.get('provider')
+        model = data.get('model')
 
         context_items = []
         if item_id:
@@ -6838,7 +6852,7 @@ def api_ai_chat():
             recent_items = manager.get_recent_items(limit=5)
             context_items.extend(recent_items)
 
-        result = ai_service.chat_with_knowledge(question, context_items)
+        result = ai_service.chat_with_knowledge(question, context_items, provider=provider, model=model)
 
         # 确保返回的是字典格式
         if isinstance(result, dict):
@@ -6872,23 +6886,26 @@ def api_ai_chat():
 @app.route('/api/ai/status')
 def api_ai_status():
     """获取AI服务状态"""
-    try:
-        # 测试 Ollama 连接
-        response = requests.get("http://localhost:11434/api/tags", timeout=5)
-        enabled = response.status_code == 200
-        return jsonify({
-            'enabled': enabled,
-            # 'model': 'deepseek-r1:14b (本地)'
-            'model': 'deepseek-r1:8b (本地)'
-            # 'model': 'deepseek-r1:32b (本地)'
-        })
-    except:
-        return jsonify({
-            'enabled': False,
-            # 'model': 'deepseek-r1:14b (未连接)'
-            'model': 'deepseek-r1:8b (未连接)'
-            # 'model': 'deepseek-r1:32b (未连接)'
-        })
+    return jsonify({
+        'success': True,
+        'data': {
+            'providers': ai_service.list_providers(),
+            'defaults': {
+                'analyze': ai_service.get_default('analyze'),
+                'generate_questions': ai_service.get_default('generate_questions'),
+                'improve_writing': ai_service.get_default('improve_writing'),
+                'chat': ai_service.get_default('chat'),
+            }
+        }
+    })
+
+
+@app.route('/api/ai/providers')
+def api_ai_providers():
+    return jsonify({
+        'success': True,
+        'data': ai_service.list_providers(),
+    })
 
 
 @app.route('/api/import_text_files', methods=['POST'])

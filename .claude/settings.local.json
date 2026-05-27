@@ -5,7 +5,21 @@
       "Bash(git init *)",
       "Bash(git config *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(pip install *)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m pytest tests/ai/test_config.py -v)",
+      "Bash(python -c \"import yaml; print\\(yaml.__version__\\)\")",
+      "Bash(python -m pytest tests/ai/test_provider.py -v)",
+      "Bash(python -m pytest tests/ai/test_ollama_provider.py -v)",
+      "Bash(python -m pytest tests/ai/test_claude_provider.py -v)",
+      "Bash(python -m pytest tests/ai/test_openai_provider.py tests/ai/test_deepseek_provider.py -v)",
+      "Bash(python -m pytest tests/ai/ -v)",
+      "Bash(python -m pytest tests/ai/test_service.py -v)",
+      "Bash(python -c \"from ai import load_config; c = load_config\\('config/ai.yaml'\\); print\\('OK:', len\\(c.providers\\), 'providers loaded'\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import cli_interface; print\\('OK'\\)\")",
+      "Bash(git reset *)"
     ]
   }
 }
