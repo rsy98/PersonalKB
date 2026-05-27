@@ -4,6 +4,7 @@ import urllib.request
 import urllib.error
 import re
 import os
+import json
 
 ai_bp = Blueprint('ai', __name__)
 
@@ -94,6 +95,25 @@ def read_uploaded_file(filename: str) -> str:
         return f.read()[:4000]
 
 
+def list_uploaded_files() -> list[dict]:
+    """列出 web/static/files/ 下所有文件"""
+    static_files_dir = os.path.join(current_app.root_path, 'static', 'files')
+    if not os.path.isdir(static_files_dir):
+        return []
+    files = []
+    for name in os.listdir(static_files_dir):
+        filepath = os.path.join(static_files_dir, name)
+        if os.path.isfile(filepath):
+            stat = os.stat(filepath)
+            files.append({
+                'name': name,
+                'size': stat.st_size,
+                'modified': stat.st_mtime,
+            })
+    files.sort(key=lambda f: f['modified'], reverse=True)
+    return files
+
+
 @ai_bp.route('/api/ai_recommendations/<int:item_id>')
 def api_ai_recommendations(item_id):
     """AI推荐API"""
@@ -105,7 +125,7 @@ def api_ai_recommendations(item_id):
         return jsonify({'error': str(e)}), 500
 
 
-@ai_bp.route('/api/ai/analyze/<int:item_id>')
+@ai_bp.route('/api/ai/analyze/<int:item_id>', methods=['GET', 'POST'])
 def api_ai_analyze(item_id):
     """AI分析知识条目"""
     try:
@@ -133,7 +153,7 @@ def api_ai_analyze(item_id):
         return jsonify({'error': str(e)}), 500
 
 
-@ai_bp.route('/api/ai/generate_questions/<int:item_id>')
+@ai_bp.route('/api/ai/generate_questions/<int:item_id>', methods=['GET', 'POST'])
 def api_ai_generate_questions(item_id):
     """生成测试问题"""
     try:
@@ -221,16 +241,16 @@ def api_ai_chat():
 def api_ai_status():
     """获取AI服务状态"""
     ai_service = get_ai_service()
+    capabilities = [
+        'analyze', 'generate_questions', 'improve_writing', 'chat',
+        'extract', 'discover_relationships', 'discover_gaps',
+        'generate_learning_path', 'optimize_review_plan',
+    ]
     return jsonify({
         'success': True,
         'data': {
             'providers': ai_service.list_providers(),
-            'defaults': {
-                'analyze': ai_service.get_default('analyze'),
-                'generate_questions': ai_service.get_default('generate_questions'),
-                'improve_writing': ai_service.get_default('improve_writing'),
-                'chat': ai_service.get_default('chat'),
-            }
+            'defaults': {c: ai_service.get_default(c) for c in capabilities},
         }
     })
 
@@ -265,6 +285,15 @@ def api_ai_extract_url():
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         return jsonify({'error': f'AI提取失败: {str(e)}'}), 500
+
+
+@ai_bp.route('/api/ai/files', methods=['GET'])
+def api_ai_list_files():
+    """列出可提取的文件"""
+    try:
+        return jsonify({'success': True, 'files': list_uploaded_files()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @ai_bp.route('/api/ai/extract/text', methods=['POST'])
@@ -424,3 +453,144 @@ def api_ai_optimize_review_plan():
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': f'AI分析失败: {str(e)}'}), 500
+
+
+@ai_bp.route('/api/ai/suggest/related/<int:item_id>', methods=['GET', 'POST'])
+def api_ai_suggest_related(item_id):
+    """AI 为指定条目推荐可能关联的其他条目"""
+    try:
+        data = request.get_json(silent=True) or {}
+        manager = get_manager()
+        item = manager.get_item_by_id(item_id)
+        if not item:
+            return jsonify({'error': '条目不存在'}), 404
+
+        all_items = manager.search_knowledge('', limit=50)
+        other_items = [i for i in all_items if i['id'] != item_id]
+        if len(other_items) < 2:
+            return jsonify({'suggestions': [], 'message': '知识库条目太少，无法建议关联'})
+
+        ai_service = get_ai_service()
+        result = ai_service.suggest_related_items(
+            item, other_items[:30],
+            provider=data.get('provider'),
+            model=data.get('model'),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': f'AI分析失败: {str(e)}'}), 500
+
+
+# ═══════════════════════════════════════════════════════════
+# Embedding & Semantic Search & RAG
+# ═══════════════════════════════════════════════════════════
+
+@ai_bp.route('/api/ai/embeddings/generate', methods=['POST'])
+def api_ai_generate_embeddings():
+    """为知识库所有条目生成嵌入向量"""
+    try:
+        manager = get_manager()
+        all_items = manager.search_knowledge('', limit=200)
+
+        if not all_items:
+            return jsonify({'error': '知识库中没有条目'}), 400
+
+        ai_service = get_ai_service()
+        total = len(all_items)
+        generated = 0
+        for item in all_items:
+            try:
+                text = f"{item.get('title', '')}\n{item.get('content', '')[:2000]}"
+                vector = ai_service.embed_text(text)
+                manager.save_embedding(item['id'], vector, 'bge-m3')
+                generated += 1
+            except Exception as e:
+                current_app.logger.warning(f'Embedding failed for item {item["id"]}: {e}')
+
+        return jsonify({
+            'success': True,
+            'total': total,
+            'generated': generated,
+            'message': f'已为 {generated}/{total} 个条目生成嵌入向量',
+        })
+    except Exception as e:
+        return jsonify({'error': f'生成嵌入失败: {str(e)}'}), 500
+
+
+@ai_bp.route('/api/ai/semantic_search', methods=['GET'])
+def api_ai_semantic_search():
+    """语义搜索"""
+    try:
+        q = request.args.get('q', '').strip()
+        if not q:
+            return jsonify({'success': True, 'items': []})
+
+        top_k = min(int(request.args.get('limit', 10)), 30)
+        manager = get_manager()
+
+        if not manager.has_embeddings():
+            return jsonify({
+                'success': True,
+                'items': [],
+                'warning': '尚未生成嵌入向量，请在知识管理页面点击"生成索引"按钮',
+            })
+
+        items_with_vec = manager.get_all_embeddings()
+        ai_service = get_ai_service()
+        results = ai_service.semantic_search(q, items_with_vec, top_k=top_k)
+
+        clean_results = []
+        for r in results:
+            clean_results.append({
+                'id': r['id'],
+                'title': r.get('title', ''),
+                'category': r.get('category', ''),
+                'summary': (r.get('summary', '') or '')[:200],
+                'content': (r.get('content', '') or '')[:300],
+                'score': r['score'],
+            })
+
+        return jsonify({'success': True, 'items': clean_results})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@ai_bp.route('/api/ai/rag_chat', methods=['POST'])
+def api_ai_rag_chat():
+    """RAG 对话：语义检索 + AI 生成"""
+    try:
+        data = request.get_json(silent=True) or {}
+        question = data.get('question', '').strip()
+        if not question:
+            return jsonify({'error': '问题不能为空'}), 400
+
+        chat_history = data.get('chat_history', [])
+        provider = data.get('provider')
+        model = data.get('model')
+        top_k = min(data.get('top_k', 5), 10)
+
+        manager = get_manager()
+
+        if not manager.has_embeddings():
+            return jsonify({
+                'answer': '知识库尚未建立索引，请先在知识管理页面点击"生成索引"按钮。',
+                'thinking': '',
+                'sources': [],
+            })
+
+        items_with_vec = manager.get_all_embeddings()
+        ai_service = get_ai_service()
+        result = ai_service.rag_chat(
+            question, items_with_vec,
+            chat_history=chat_history,
+            provider=provider, model=model,
+            top_k=top_k,
+        )
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            'answer': f'RAG对话出错: {str(e)}',
+            'thinking': '',
+            'sources': [],
+        }), 500

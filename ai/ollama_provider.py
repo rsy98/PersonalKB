@@ -38,6 +38,22 @@ class OllamaProvider(BaseProvider):
         data = resp.json()
         return [m['name'] for m in data.get('models', [])]
 
+    def embed(self, text: str, model: str) -> list[float]:
+        """Generate embedding vector for text"""
+        resp = requests.post(f'{self.base_url}/api/embeddings', json={
+            'model': model,
+            'prompt': text,
+        }, timeout=60)
+        resp.raise_for_status()
+        return resp.json()['embedding']
+
+    def embed_batch(self, texts: list[str], model: str) -> list[list[float]]:
+        """Generate embeddings for multiple texts"""
+        results = []
+        for text in texts:
+            results.append(self.embed(text, model))
+        return results
+
     def is_available(self) -> bool:
         try:
             requests.get(f'{self.base_url}/api/tags', timeout=5)

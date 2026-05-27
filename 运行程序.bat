@@ -1,36 +1,78 @@
 @echo off
-chcp 65001 >nul
-echo ЁЯЪА цнгхЬихРпхКиф╕кф║║чЯешпЖчобчРЖч│╗ч╗Я...
+chcp 936 >nul
+title ╕Ў╚╦╓к╩╢╣▄└э╧╡═│
+
+echo.
+echo   иXиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTи[
+echo   иU       ╕Ў╚╦╓к╩╢╣▄└э╧╡═│ v1.0              иU
+echo   и^иTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиTиa
 echo.
 
-:: цгАцЯеPythonцШпхРжхоЙшгЕ
+:: ╝ь▓щ Python
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo тЭМ цЬкцЙ╛хИ░Pythonя╝Мшп╖хЕИхоЙшгЕPython 3.8+
+    echo   [┤э╬є] ╬┤╒╥╡╜ Pythonгм╟ы╧╚░▓╫░ Python 3.8+
+    echo.
     pause
     exit /b 1
 )
 
-echo тЬЕ PythonчОпхвГцгАц╡ЛщАЪш┐З
+:: ╝ь▓щ╥└└╡
+pip show flask >nul 2>&1
+if %errorlevel% neq 0 (
+    echo   [╠с╩╛] ╝ь▓т╡╜╥└└╡╬┤░▓╫░гм╒¤╘┌░▓╫░...
+    pip install -r requirements.txt -q
+    if %errorlevel% neq 0 (
+        echo   [┤э╬є] ╥└└╡░▓╫░╩з░▄гм╟ы╩╓╢п╓┤╨╨: pip install -r requirements.txt
+        pause
+        exit /b 1
+    )
+    echo   [═ъ│╔] ╥└└╡░▓╫░│╔╣ж
+    echo.
+)
+
+:: ╤б╘ё╩¤╛▌┐т
+echo   й░йдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдй┤
+echo   йж  ╟ы╤б╘ё╓к╩╢┐т:                            йж
+echo   йж    [1] knowledge.db  (═и╙├╓к╩╢)            йж
+echo   йж    [2] art.db        (╥╒╩ї)                йж
+echo   йж    [3] AI.db         (╚╦╣д╓╟─▄)            йж
+echo   йж    [4] math.db       (╩¤╤з)                йж
+echo   йж    [5] life.db       (╔·╗ю╝╟┬╝)            йж
+echo   йж    [6] physics.db    (╬я└э┐╞╤з)            йж
+echo   йж    [0] ═╦│Ў                                йж
+echo   й╕йдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдй╝
+echo.
+set /p choice="  ╟ы╩ф╚ы╤б╧ю (1/2/3/4/5/6/0): "
+
+if "%choice%"=="0" exit /b 0
+if "%choice%"=="1" set DB=knowledge.db && goto start
+if "%choice%"=="2" set DB=art.db && goto start
+if "%choice%"=="3" set DB=AI.db && goto start
+if "%choice%"=="4" set DB=math.db && goto start
+if "%choice%"=="5" set DB=life.db && goto start
+if "%choice%"=="6" set DB=physics.db && goto start
+
+echo   ╬▐╨з╤б╧югм╩╣╙├─м╚╧╩¤╛▌┐т knowledge.db
+set DB=knowledge.db
+goto start
+
+:start
+echo.
+echo   ╞Ї╢п╓╨...
+echo   ╩¤╛▌┐т: %DB%
+echo   ╖├╬╩╡╪╓╖: http://localhost:5000
+echo   ░┤ Ctrl+C ═г╓╣╖■╬ё╞ў
+echo   йдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйдйд
 echo.
 
-:: чЫ┤цОеф╜┐чФи1хП╖цХ░цНох║УхРпхКия╝Мф╕НцШ╛чд║щАЙцЛйчХМщЭв
-echo ЁЯУЪ ф╜┐чФищ╗ШшодцХ░цНох║У: knowledge.db
-echo.
-python run.py --db knowledge.db
+python run.py --db %DB%
 
 if %errorlevel% neq 0 (
     echo.
-    echo тЭМ хРпхКихд▒ш┤е
+    echo   [┤э╬є] ╞Ї╢п╩з░▄гм╟ы╝ь▓щ┼ф╓├║═╚╒╓╛
     pause
     exit /b 1
 )
 
-echo.
-echo ЁЯМР чиЛх║ПцнгхЬиш┐РшбМф╕н...
-echo ЁЯТб шп╖цЙЛхКишо┐щЧо: http://localhost:5000
-echo тП╣я╕П  цМЙCtrl+CхБЬцнвцЬНхКб
-echo.
-
 pause
-exit

@@ -92,6 +92,7 @@ a:hover { color: var(--accent-hover); }
 .sidebar-header {
     padding: 20px 16px 12px;
     border-bottom: 1px solid var(--border);
+    position: relative;
 }
 
 .sidebar-logo {
@@ -204,6 +205,24 @@ a:hover { color: var(--accent-hover); }
 .sidebar.collapsed .sidebar-header {
     text-align: center;
     padding: 16px 4px;
+}
+.sidebar.collapsed .sidebar-footer {
+    flex-direction: column;
+    padding: 4px;
+}
+.sidebar.collapsed .theme-toggle {
+    font-size: 14px;
+    padding: 6px 2px;
+}
+.sidebar.collapsed .sidebar-collapse {
+    font-size: 14px;
+    padding: 6px 2px;
+    width: 100%;
+    text-align: center;
+}
+.sidebar.collapsed .sidebar-collapse:hover {
+    color: var(--accent);
+    background: var(--bg-tertiary);
 }
 
 /* Hamburger menu button */
@@ -629,12 +648,20 @@ a:hover { color: var(--accent-hover); }
 
 .graph-container {
     width: 100%;
-    height: 500px;
+    min-height: 500px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     overflow: hidden;
     position: relative;
+}
+
+#mynetwork {
+    width: 100%;
+    height: 600px;
+    border: none;
+    border-radius: var(--radius-lg);
+    background: var(--bg-primary);
 }
 
 .graph-container svg {

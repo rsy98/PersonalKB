@@ -1,0 +1,12 @@
+database:
+  path: knowledge.db
+
+flask:
+  host: 127.0.0.1
+  port: 5000
+  debug: false
+
+upload:
+  image_extensions: [png, jpg, jpeg, gif, bmp, webp]
+  file_extensions: [pdf, doc, docx, txt, zip, rar, xls, xlsx, ppt, pptx, vim, py, yaml, tex, md, sty, bib, def]
+  text_extensions: [md, txt, tex, rst, vim, csv, py, js, java, cpp, c, html, css, json, yaml, yml, xml]

@@ -42,11 +42,31 @@
         <button class="btn btn-outline" onclick="showAllItems()">全部</button>
         <button class="btn btn-outline" onclick="showCategories()">分类</button>
         <button class="btn btn-outline" onclick="showTags()">标签</button>
+        <span style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;">
+            <span style="font-size:11px;color:var(--text-tertiary);">语义</span>
+            <div class="toggle-switch" id="semanticToggle" onclick="toggleSemanticSearch()"></div>
+        </span>
+        <button class="btn btn-sm btn-outline" id="btnGenerateEmbed" onclick="generateEmbeddings()" style="font-size:11px;color:var(--accent);">
+            🔧 生成索引
+        </button>
+    </div>
+
+    <!-- Export toolbar -->
+    <div class="export-toolbar" id="exportToolbar" style="display:none;margin-bottom:12px;padding:8px 12px;background:var(--bg-tertiary);border-radius:8px;display:none;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--text-secondary);font-weight:500;">📤 导出</span>
+        <select class="form-select" id="exportCategory" style="width:auto;">
+            <option value="">全部分类</option>
+        </select>
+        <button class="btn btn-sm btn-outline" onclick="exportKnowledge('json')">JSON</button>
+        <button class="btn btn-sm btn-outline" onclick="exportKnowledge('markdown')">Markdown (.zip)</button>
+        <button class="btn btn-sm btn-outline" onclick="exportKnowledge('anki')">Anki (.csv)</button>
     </div>
 
     <!-- AI-assisted entry (collapsible) -->
     <details class="ai-extract-details" id="aiExtractDetails">
-        <summary>🤖 AI辅助录入 <span style="font-weight:400;font-size:12px;color:var(--text-tertiary);">— 从URL/文本/文件智能提取</span></summary>
+        <summary>🤖 AI辅助录入 <span style="font-weight:400;font-size:12px;color:var(--text-tertiary);">— 从URL/文本/文件智能提取</span>
+            <span id="extractModelSelector" style="display:inline-block;margin-left:8px;vertical-align:middle;" onclick="event.preventDefault();event.stopPropagation();"></span>
+        </summary>
         <div>
             <!-- Quick mode toggle -->
             <div class="toggle-row" style="margin-bottom:12px;">
@@ -76,11 +96,18 @@
 
             <!-- File selector -->
             <div class="file-selector" id="extractFileRow" style="display:none;">
-                <span style="font-size:13px;color:var(--text-secondary);">选择已上传文件：</span>
-                <select class="form-select" id="extractFileSelect">
-                    <option value="">-- 选择文件 --</option>
-                </select>
-                <button class="btn btn-primary" onclick="extractFromFile()">提取</button>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span style="font-size:13px;color:var(--text-secondary);">已上传文件：</span>
+                    <select class="form-select" id="extractFileSelect" style="flex:1;min-width:160px;">
+                        <option value="">-- 选择文件 --</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="extractFromFile()">提取</button>
+                    <span style="color:var(--text-tertiary);font-size:12px;">或</span>
+                    <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;">
+                        📤 上传新文件
+                        <input type="file" style="display:none;" onchange="handleExtractFileUpload(this)" accept=".txt,.md,.tex,.pdf,.csv,.py,.js,.java,.html,.css,.json,.yaml,.xml,.rst">
+                    </label>
+                </div>
             </div>
 
             <!-- Extract loading -->
@@ -183,7 +210,9 @@
     </details>
 
     <!-- AI gap analysis results -->
-    <div id="gapAnalysis" style="display:none;margin-bottom:16px;"></div>
+    <div id="gapAnalysis" style="display:none;margin-bottom:16px;">
+        <span id="gapModelSelector" style="display:inline-block;margin-bottom:8px;"></span>
+    </div>
 
     <!-- Search results area -->
     <div id="searchResults">
@@ -212,6 +241,7 @@
             <span>排序方式:</span>
             <button class="btn btn-outline btn-sm" id="btnSortDefault" onclick="switchReviewSort('default')">按日期</button>
             <button class="btn btn-outline btn-sm" id="btnSortAI" onclick="switchReviewSort('ai')">🤖 AI 智能排序</button>
+            <span id="reviewModelSelector" style="display:inline-block;vertical-align:middle;margin-left:4px;"></span>
         </div>
         <div class="strategy-notes" id="strategyNotes" style="display:none;"></div>
         <div id="reviewContent">
@@ -225,6 +255,7 @@
             <input type="text" class="form-input" id="learningGoal" placeholder="输入学习目标，如：掌握机器学习基础"
                    onkeydown="if(event.key==='Enter')generateLearningPath()">
             <button class="btn btn-primary" onclick="generateLearningPath()">生成路径</button>
+            <span id="learningModelSelector" style="display:inline-block;vertical-align:middle;"></span>
         </div>
         <div id="learningPathContent">
             <div class="empty-state">
@@ -251,10 +282,12 @@
         <button class="btn btn-outline btn-sm" onclick="discoverRelationships()" id="btnDiscoverRel">
             🤖 AI 发现关联
         </button>
+        <span id="graphModelSelector" style="display:inline-block;vertical-align:middle;"></span>
     </div>
     <div class="graph-container" id="graphContainer">
-        <div class="loading"><div class="spinner"></div>加载中...</div>
+        <div id="mynetwork"></div>
     </div>
+    <div id="graphInfo" style="margin-top:8px;color:var(--text-secondary);font-size:12px;"></div>
     <div class="graph-suggestion-controls" id="graphSuggestionControls" style="display:none;">
         <span>AI 发现了 <span class="suggestion-count" id="suggestionCount">0</span> 个潜在关联</span>
         <button class="btn btn-primary btn-sm" onclick="adoptAllSuggestions()">全部采纳</button>
@@ -266,7 +299,13 @@
 <section class="panel" id="panel-ai">
     <div class="panel-header">
         <h2 class="panel-title">AI 助手</h2>
-        <p class="panel-desc">基于知识库内容的智能对话、分析和写作辅助</p>
+        <p class="panel-desc">基于知识库内容的智能对话、分析和写作辅助
+            <span id="chatModelSelector" style="display:inline-block;margin-left:8px;vertical-align:middle;"></span>
+            <span style="display:inline-flex;align-items:center;gap:4px;margin-left:8px;vertical-align:middle;">
+                <span style="font-size:11px;color:var(--text-tertiary);">RAG</span>
+                <div class="toggle-switch active" id="ragToggle" onclick="toggleRAGMode()"></div>
+            </span>
+        </p>
     </div>
     <div class="chat-container">
         <div class="chat-messages" id="chatMessages">
@@ -280,7 +319,7 @@
         </div>
         <div class="chat-input-row">
             <input type="text" class="chat-input" id="chatInput"
-                   placeholder="输入问题..."
+                   placeholder="输入问题..." autocomplete="off"
                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendChatMessage();event.preventDefault()}">
             <button class="btn btn-primary" onclick="sendChatMessage()">发送</button>
             <button class="btn btn-outline btn-sm" onclick="clearChatHistory()">清空</button>
@@ -313,6 +352,13 @@
            accept=".md,.txt,.tex,.rst,.vim,.csv,.py,.js,.java,.cpp,.c,.html,.css,.json,.yaml,.yml,.xml"
            onchange="importFromTextFiles()">
     <div id="textImportProgress" style="margin-top:12px;"></div>
+
+    <h3 style="margin-top:24px;margin-bottom:12px;">导入 JSON 知识库</h3>
+    <div class="json-import-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="file" id="jsonFileInput" accept=".json" style="flex:1;min-width:180px;">
+        <button class="btn btn-primary" onclick="importFromJSON()">批量导入</button>
+    </div>
+    <div id="jsonImportProgress" style="margin-top:12px;"></div>
 </section>
 
 <!-- Hidden file inputs for inline upload -->

@@ -106,6 +106,17 @@ class KnowledgeDatabase:
                 notes TEXT,
                 FOREIGN KEY (knowledge_id) REFERENCES knowledge_items(id) ON DELETE CASCADE
             )
+            """,
+
+            # 嵌入向量表（语义搜索用）
+            """
+            CREATE TABLE IF NOT EXISTS embeddings (
+                knowledge_id INTEGER PRIMARY KEY,
+                vector_json TEXT NOT NULL,
+                model VARCHAR(100),
+                created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (knowledge_id) REFERENCES knowledge_items(id) ON DELETE CASCADE
+            )
             """
         ]
 

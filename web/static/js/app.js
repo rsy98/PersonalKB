@@ -21,6 +21,10 @@ const state = {
     reviewTab: 'review-plan',
     suggestionEdges: [],
     cachedReviewPlan: null,
+    aiConfig: null,
+    aiModel: {},  // { capability: {provider, model} }
+    semanticMode: false,
+    ragMode: true,
 };
 
 // ================================================================
@@ -107,6 +111,7 @@ const apiService = {
     getRecent: () => api('/api/recent'),
     getStats: () => api('/api/stats'),
     getReviews: () => api('/api/review'),
+    getAllReviews: () => api('/api/review?all=1'),
     reviewSession: (data) => api('/api/review_session', { method: 'POST', body: JSON.stringify(data) }),
     getGraph: (category) => {
         const qs = category ? `?category=${encodeURIComponent(category)}` : '';
@@ -120,7 +125,17 @@ const apiService = {
     getCategoryItems: (cat) => api(`/api/category/${encodeURIComponent(cat)}`),
     getTagItems: (tag) => api(`/api/tag/${encodeURIComponent(tag)}`),
     batchEdit: (data) => api('/api/batch_edit', { method: 'POST', body: JSON.stringify(data) }),
-    exportData: () => api('/api/export'),
+    exportData: (format, category) => {
+        const params = new URLSearchParams({ format });
+        if (category) params.append('category', category);
+        return `/api/export?${params.toString()}`;
+    },
+    generateEmbeddings: () => api('/api/ai/embeddings/generate', { method: 'POST' }),
+    semanticSearch: (q, limit) => api(`/api/ai/semantic_search?q=${encodeURIComponent(q)}&limit=${limit || 10}`),
+    ragChat: (question, chatHistory, provider, model) => api('/api/ai/rag_chat', {
+        method: 'POST',
+        body: JSON.stringify({ question, chat_history: chatHistory, provider, model }),
+    }),
     importFile: (formData) => {
         return fetch(API_BASE + '/api/import', { method: 'POST', body: formData }).then(r => r.json());
     },
@@ -129,6 +144,12 @@ const apiService = {
     },
     importTextFiles: (formData) => {
         return fetch(API_BASE + '/api/import_text_files', { method: 'POST', body: formData }).then(r => r.json());
+    },
+    importJSONData: (items) => {
+        return api('/api/import/json', { method: 'POST', body: JSON.stringify({ items }) });
+    },
+    searchItems: (q) => {
+        return api('/api/search_items?q=' + encodeURIComponent(q));
     },
     switchDB: (db) => api('/api/switch_database', { method: 'POST', body: JSON.stringify({ database: db }) }),
     currentDB: () => api('/api/current_database'),
@@ -149,7 +170,7 @@ const apiService = {
             { method: 'POST', body: JSON.stringify({ content, provider, model }) });
     },
     aiChat: (data) => api('/api/ai/chat', { method: 'POST', body: JSON.stringify(data) }),
-    contentAnalysis: (id) => api(`/api/content_analysis/${id}`),
+    contentAnalysis: (id) => api(`/api/ai/analyze/${id}`, { method: 'POST', body: '{}' }),
     aiRecommendations: (id) => api(`/api/ai_recommendations/${id}`),
     extractURL: (url, provider, model) => {
         return api('/api/ai/extract/url', {
@@ -169,30 +190,39 @@ const apiService = {
             body: JSON.stringify({ provider, model }),
         });
     },
+    listExtractableFiles: () => {
+        return api('/api/ai/files');
+    },
     discoverRelationships: (data) => {
         return api('/api/ai/discover/relationships', {
             method: 'POST',
             body: JSON.stringify(data),
         });
     },
-    discoverGaps: (category) => {
+    discoverGaps: (category, provider, model) => {
         return api('/api/ai/discover/gaps', {
             method: 'POST',
-            body: JSON.stringify({ category }),
+            body: JSON.stringify({ category, provider, model }),
         });
     },
-    generateLearningPath: (goal, category) => {
-        const data = { goal };
+    generateLearningPath: (goal, category, provider, model) => {
+        const data = { goal, provider, model };
         if (category) { data.scope = 'category'; data.category = category; }
         return api('/api/ai/learning/path', {
             method: 'POST',
             body: JSON.stringify(data),
         });
     },
-    optimizeReviewPlan: (days) => {
+    optimizeReviewPlan: (days, provider, model) => {
         return api('/api/ai/learning/review-plan', {
             method: 'POST',
-            body: JSON.stringify({ days: days || 7 }),
+            body: JSON.stringify({ days: days || 7, provider, model }),
+        });
+    },
+    suggestRelated: (itemId, provider, model) => {
+        return api(`/api/ai/suggest/related/${itemId}`, {
+            method: 'POST',
+            body: JSON.stringify({ provider, model }),
         });
     },
 };
@@ -237,7 +267,12 @@ function renderStats(stats) {
 function renderReviews(items) {
     const container = document.getElementById('reviewContent');
     if (!items || items.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎉</div><p>今天没有需要复习的内容！</p></div>';
+        container.innerHTML = `<div class="empty-state">
+            <div class="empty-state-icon">🎉</div>
+            <p>今天没有到期需要复习的内容</p>
+            <p style="font-size:12px;color:var(--text-tertiary);">复习系统基于间隔重复算法，新条目会在创建几天后进入复习队列</p>
+            <button class="btn btn-primary btn-sm" style="margin-top:8px;" onclick="loadAllReviews()">📚 复习全部条目</button>
+        </div>`;
         return;
     }
     container.innerHTML = items.map((item, i) => `
@@ -287,15 +322,74 @@ function renderItemDetail(item) {
             创建: ${formatDate(item.created_date)} | 更新: ${formatDate(item.updated_date)}
             ${item.next_review_date ? ` | 下次复习: ${formatDate(item.next_review_date)}` : ''}
         </div>
+        <div style="margin-top:12px;padding:12px;background:var(--bg-tertiary);border-radius:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;" onclick="event.stopPropagation()">
+            <span style="font-size:12px;color:var(--text-secondary);font-weight:500;">🤖 AI 操作:</span>
+            <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;font-size:10px;">
+                <span style="color:var(--text-tertiary);">分析</span><span id="detailAnalyzeSelector"></span>
+                <span style="color:var(--text-tertiary);">出题</span><span id="detailQuestionsSelector"></span>
+                <span style="color:var(--text-tertiary);">润色</span><span id="detailImproveSelector"></span>
+            </div>
+            <button class="btn btn-sm btn-outline" id="btnAnalyzeDetail" onclick="analyzeItem(${item.id})">📊 分析</button>
+            <button class="btn btn-sm btn-outline" id="btnGenQuestions" onclick="generateQuestions(${item.id})">📝 生成题目</button>
+            <button class="btn btn-sm btn-outline" onclick="improveWritingForItem(${item.id})">✨ 改进写作</button>
+            <span id="aiOpResult" style="font-size:12px;color:var(--text-tertiary);width:100%;margin-top:4px;"></span>
+        </div>
         <div id="relatedItemsSection" style="margin-top:20px;">
-            <h4 style="margin-bottom:8px;">关联条目</h4>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+                <h4 style="margin:0;">关联条目</h4>
+                <div style="display:flex;gap:4px;">
+                    <button class="btn btn-sm btn-outline" onclick="showAddRelationship()">+ 添加关联</button>
+                    <button class="btn btn-sm btn-outline" id="btnAISuggestRel" onclick="aiSuggestRelated(${item.id})" style="color:var(--accent);">🤖 AI 建议关联</button>
+                </div>
+            </div>
+            <div id="aiSuggestResults" style="margin-bottom:8px;"></div>
             <div id="relatedItemsList"><div class="loading"><div class="spinner"></div></div></div>
+            <div id="addRelationshipForm" style="display:none;margin-top:12px;padding:12px;background:var(--bg-tertiary);border-radius:8px;">
+                <div style="margin-bottom:8px;">
+                    <input type="text" class="form-input" id="relSearchInput" placeholder="搜索目标条目..." oninput="searchRelTarget(this.value)">
+                </div>
+                <div id="relSearchResults" style="max-height:150px;overflow-y:auto;margin-bottom:8px;"></div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <select class="form-select" id="relType" style="width:auto;">
+                        <option value="related_to">相关</option>
+                        <option value="prerequisite">前置知识</option>
+                        <option value="extends">扩展深化</option>
+                        <option value="contradicts">不同观点</option>
+                    </select>
+                    <select class="form-select" id="relStrength" style="width:auto;">
+                        <option value="3">关联度 3</option>
+                        <option value="1">关联度 1</option>
+                        <option value="2">关联度 2</option>
+                        <option value="4">关联度 4</option>
+                        <option value="5">关联度 5</option>
+                    </select>
+                    <button class="btn btn-primary btn-sm" onclick="confirmAddRelationship()">确认</button>
+                    <button class="btn btn-sm btn-outline" onclick="cancelAddRelationship()">取消</button>
+                </div>
+            </div>
+        </div>
+        <div style="margin-top:20px;border-top:1px solid var(--border-light);padding-top:16px;">
+            <h4 style="margin:0 0 8px 0;display:flex;align-items:center;gap:8px;">
+                💬 针对此条目的 AI 对话
+                <span id="detailChatSelector" style="display:inline-block;vertical-align:middle;"></span>
+            </h4>
+            <div id="itemChatMessages" style="max-height:250px;overflow-y:auto;padding:8px;background:var(--bg-secondary);border-radius:8px;margin-bottom:8px;">
+                <div class="chat-message assistant" style="font-size:12px;">你可以针对「${escapeHtml(item.title)}」向我提问，我会结合条目内容和我的知识来回答。</div>
+            </div>
+            <div style="display:flex;gap:6px;">
+                <input type="text" id="itemChatInput" class="form-input" placeholder="针对此条目提问..."
+                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendItemChatMessage(${item.id});event.preventDefault()}"
+                       style="flex:1;">
+                <button class="btn btn-primary btn-sm" onclick="sendItemChatMessage(${item.id})">发送</button>
+                <button class="btn btn-outline btn-sm" onclick="clearItemChat()">清空</button>
+            </div>
         </div>
     `;
     document.getElementById('modalTitle').textContent = '条目详情';
     document.getElementById('modalOverlay').style.display = 'flex';
     state.currentItemId = item.id;
     state._itemContent = content;
+    state._itemChatHistory = [];
     loadRelatedItems(item.id);
     refreshMath();
 }
@@ -326,77 +420,128 @@ function switchContentView(mode, itemId) {
     }
 }
 
+function getNodeColor(importanceLevel) {
+    const colors = {
+        1: '#666666',
+        2: '#3498db',
+        3: '#bb86fc',
+        4: '#f39c12',
+        5: '#e74c3c'
+    };
+    return colors[importanceLevel] || colors[3];
+}
+
 function renderKnowledgeGraph(data) {
-    const container = document.getElementById('graphContainer');
+    const container = document.getElementById('mynetwork');
+    if (!container) return;
+
     if (!data || !data.nodes || data.nodes.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🕸</div><p>暂无图谱数据，请先添加知识条目和关联关系</p></div>';
+        container.innerHTML = '<div style="text-align:center;padding:50px;color:var(--text-tertiary);">暂无图谱数据，请先添加知识条目和关联关系</div>';
+        document.getElementById('graphInfo').textContent = '';
         return;
     }
-    container.innerHTML = '';
 
-    const width = container.clientWidth || 800;
-    const height = container.clientHeight || 500;
+    const nodes = new vis.DataSet(data.nodes.map(node => ({
+        id: node.id,
+        label: (node.title || '').length > 18 ? (node.title || '').substring(0, 18) + '...' : (node.title || '未知'),
+        group: node.category || '未分类',
+        title: `ID: ${node.id}\n标题: ${node.title || '未知'}\n分类: ${node.category || '未分类'}\n重要性: ${node.importance_level || 1}/5\n理解程度: ${node.understanding_level || 1}/5`,
+        value: node.importance_level || 1,
+        color: getNodeColor(node.importance_level || 1),
+        font: { color: '#ffffff' }
+    })));
 
-    const svg = d3.select(container).append('svg')
-        .attr('width', width).attr('height', height);
+    const edges = new vis.DataSet((data.edges || []).map(edge => ({
+        from: edge.source_id,
+        to: edge.target_id,
+        arrows: 'to',
+        color: { color: '#bb86fc', highlight: '#e040fb' },
+        title: edge.relationship_type || '关联'
+    })));
 
-    const g = svg.append('g');
+    const options = {
+        nodes: {
+            shape: 'dot',
+            size: 25,
+            font: { size: 14, face: 'Tahoma', color: '#ffffff' },
+            borderWidth: 2,
+            shadow: true
+        },
+        edges: {
+            width: 2,
+            color: { color: '#bb86fc', highlight: '#e040fb' },
+            shadow: true,
+            smooth: { type: 'continuous' }
+        },
+        physics: {
+            enabled: true,
+            solver: 'forceAtlas2Based',
+            forceAtlas2Based: {
+                gravitationalConstant: -50,
+                centralGravity: 0.01,
+                springLength: 100,
+                springConstant: 0.08,
+                damping: 0.4,
+                avoidOverlap: 1
+            }
+        },
+        interaction: {
+            hover: true,
+            tooltipDelay: 200,
+            hideEdgesOnDrag: true,
+            navigationButtons: true,
+            keyboard: true
+        },
+        layout: {
+            improvedLayout: true,
+            randomSeed: Math.floor(Math.random() * 1000)
+        }
+    };
 
-    svg.call(d3.zoom().scaleExtent([0.1, 4]).on('zoom', (event) => {
-        g.attr('transform', event.transform);
-    }));
+    const network = new vis.Network(container, { nodes, edges }, options);
 
-    const categories = [...new Set(data.nodes.map(n => n.category || '未分类'))];
-    const colorScale = d3.scaleOrdinal(d3.schemeCategory10).domain(categories);
+    network.on('click', function(params) {
+        if (params.nodes.length > 0) {
+            showItemDetail(params.nodes[0]);
+        }
+    });
 
-    const links = g.append('g').selectAll('line')
-        .data(data.edges).join('line')
-        .attr('stroke', 'var(--text-tertiary)').attr('stroke-opacity', 0.4)
-        .attr('stroke-width', d => d.strength || 1);
-
-    const nodes = g.append('g').selectAll('circle')
-        .data(data.nodes).join('g')
-        .attr('cursor', 'pointer')
-        .call(d3.drag()
-            .on('start', (event, d) => { if (!event.active) graphSimulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-            .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
-            .on('end', (event, d) => { if (!event.active) graphSimulation.alphaTarget(0); d.fx = null; d.fy = null; }));
-
-    nodes.append('circle')
-        .attr('r', d => 5 + (d.importance_level || 3) * 3)
-        .attr('fill', d => colorScale(d.category || '未分类'))
-        .attr('stroke', 'var(--bg-primary)').attr('stroke-width', 1.5);
-
-    nodes.append('text')
-        .text(d => (d.title || '').length > 8 ? (d.title || '').slice(0, 8) + '...' : (d.title || ''))
-        .attr('font-size', 10).attr('dx', 12).attr('dy', 4)
-        .attr('fill', 'var(--text-secondary)');
-
-    nodes.on('click', (event, d) => showItemDetail(d.id))
-         .on('mouseenter', function() { d3.select(this).select('circle').attr('stroke', 'var(--accent)').attr('stroke-width', 3); })
-         .on('mouseleave', function() { d3.select(this).select('circle').attr('stroke', 'var(--bg-primary)').attr('stroke-width', 1.5); });
-
-    graphSimulation = d3.forceSimulation(data.nodes)
-        .force('link', d3.forceLink(data.edges).id(d => d.id).distance(80))
-        .force('charge', d3.forceManyBody().strength(-200))
-        .force('center', d3.forceCenter(width / 2, height / 2))
-        .on('tick', () => {
-            links.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-                 .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-            nodes.attr('transform', d => `translate(${d.x},${d.y})`);
-            g.selectAll('line.suggested-edge').each(function() {
-                const sid = parseInt(this.getAttribute('data-sid'));
-                const tid = parseInt(this.getAttribute('data-tid'));
-                const s = data.nodes.find(n => n.id === sid);
-                const t = data.nodes.find(n => n.id === tid);
-                if (s && t) {
-                    d3.select(this).attr('x1', s.x).attr('y1', s.y).attr('x2', t.x).attr('y2', t.y);
+    network.on('doubleClick', function(params) {
+        if (params.nodes.length > 0) {
+            const connectedNodes = new Set();
+            const allEdges = network.body.data.edges.get();
+            allEdges.forEach(edge => {
+                if (edge.from === params.nodes[0] || edge.to === params.nodes[0]) {
+                    connectedNodes.add(edge.from);
+                    connectedNodes.add(edge.to);
                 }
             });
-        });
+            const allNodes = network.body.data.nodes.get();
+            allNodes.forEach(node => {
+                if (connectedNodes.has(node.id)) {
+                    network.body.data.nodes.update({ id: node.id, borderWidth: 3, color: { border: '#ffffff' } });
+                }
+            });
+            setTimeout(() => {
+                allNodes.forEach(node => {
+                    if (connectedNodes.has(node.id)) {
+                        network.body.data.nodes.update({ id: node.id, borderWidth: 2, color: { border: '#ffffff' } });
+                    }
+                });
+            }, 2000);
+        }
+    });
 
+    window.knowledgeGraphNetwork = network;
+
+    document.getElementById('graphInfo').textContent =
+        `节点: ${data.nodes.length} | 关系: ${data.edges.length}`;
+
+    // 重建分类筛选器选项
+    const categories = [...new Set(data.nodes.map(n => n.category || '未分类'))];
     const filter = document.getElementById('graphCategoryFilter');
-    if (filter && filter.options.length <= 1) {
+    if (filter) {
+        while (filter.options.length > 1) filter.remove(1);
         categories.forEach(cat => {
             const opt = document.createElement('option');
             opt.value = cat;
@@ -423,6 +568,7 @@ function switchPanel(name) {
     if (name === 'review') loadReviews();
     else if (name === 'graph') loadKnowledgeGraph();
     else if (name === 'ai') loadAIStatus();
+    else if (name === 'upload') { /* panel activated */ }
 
     window.location.hash = name;
 }
@@ -437,16 +583,26 @@ function toggleTheme() {
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebarOverlay');
+    const collapseBtn = document.querySelector('.sidebar-collapse');
     if (window.innerWidth < 768) {
         sidebar.classList.toggle('open');
         overlay.classList.toggle('show');
     } else {
         sidebar.classList.toggle('collapsed');
-        // Persist collapse state
         const collapsed = sidebar.classList.contains('collapsed');
+        if (collapseBtn) collapseBtn.textContent = collapsed ? '▶' : '◀';
         localStorage.setItem('sidebarCollapsed', collapsed ? 'true' : 'false');
     }
 }
+
+// 页面加载时恢复折叠状态
+(function() {
+    if (localStorage.getItem('sidebarCollapsed') === 'true') {
+        document.getElementById('sidebar').classList.add('collapsed');
+        const btn = document.querySelector('.sidebar-collapse');
+        if (btn) btn.textContent = '▶';
+    }
+})();
 
 // ================================================================
 // 6. Core Operations
@@ -455,16 +611,126 @@ async function searchItems() {
     const query = document.getElementById('searchInput').value.trim();
     if (!query) { showAllItems(); return; }
     try {
-        const items = await apiService.search(query);
-        renderSearchResults(items);
+        const gapContainer = document.getElementById('gapAnalysis');
+        if (gapContainer) gapContainer.style.display = 'none';
+        if (state.semanticMode) {
+            const result = await apiService.semanticSearch(query, 20);
+            if (result.warning) {
+                showToast(result.warning, 'warning');
+                // Fall back to keyword search
+                const items = await apiService.search(query);
+                renderSearchResults(items);
+            } else {
+                renderSemanticResults(result.items || []);
+            }
+        } else {
+            const items = await apiService.search(query);
+            renderSearchResults(items);
+        }
+        showExportToolbar();
     } catch (e) {}
 }
 
 async function showAllItems() {
     try {
+        const gapContainer = document.getElementById('gapAnalysis');
+        if (gapContainer) gapContainer.style.display = 'none';
         const items = await apiService.getRecent();
         renderSearchResults(items);
+        showExportToolbar();
     } catch (e) {}
+}
+
+// ── Export ──
+
+function showExportToolbar() {
+    const toolbar = document.getElementById('exportToolbar');
+    if (toolbar) toolbar.style.display = 'flex';
+    // Populate category dropdown
+    apiService.getCategories().then(cats => {
+        const sel = document.getElementById('exportCategory');
+        if (sel && cats) {
+            sel.innerHTML = '<option value="">全部分类</option>' +
+                cats.map(c => `<option value="${escapeHtml(c.name || c)}">${escapeHtml(c.name || c)}</option>`).join('');
+            // Preserve selection
+            if (state._exportCategory) sel.value = state._exportCategory;
+            sel.onchange = () => { state._exportCategory = sel.value; };
+        }
+    }).catch(() => {});
+}
+
+function exportKnowledge(format) {
+    const category = document.getElementById('exportCategory')?.value || '';
+    const url = apiService.exportData(format, category);
+    // Trigger file download
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
+
+// ── Semantic Search ──
+
+function toggleSemanticSearch() {
+    const toggle = document.getElementById('semanticToggle');
+    state.semanticMode = !state.semanticMode;
+    if (state.semanticMode) {
+        toggle.classList.add('active');
+    } else {
+        toggle.classList.remove('active');
+    }
+}
+
+function renderSemanticResults(items) {
+    const container = document.getElementById('searchResults');
+    if (!items || items.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>未找到相关结果</p></div>';
+        return;
+    }
+    container.innerHTML = `<div style="margin-bottom:8px;font-size:12px;color:var(--text-tertiary);">语义搜索结果 (${items.length} 条)</div><div class="item-list">${items.map(item => `
+        <div class="item-card" onclick="showItemDetail(${item.id})">
+            <div class="item-card-title">
+                ${escapeHtml(item.title)}
+                <span style="float:right;font-size:11px;color:var(--accent);">${(item.score * 100).toFixed(0)}%</span>
+            </div>
+            <div class="item-card-meta">📂 ${escapeHtml(item.category || '')} ${item.summary ? '| ' + escapeHtml(item.summary) : ''}</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;line-height:1.5;">${contentPreview(item.content, 150)}</div>
+        </div>
+    `).join('')}</div>`;
+}
+
+async function generateEmbeddings() {
+    const btn = document.getElementById('btnGenerateEmbed');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = '生成中...';
+    try {
+        const result = await apiService.generateEmbeddings();
+        if (result.success) {
+            showToast(result.message, 'success');
+        } else {
+            showToast(result.error || '生成失败', 'error');
+        }
+    } catch (e) {
+        showToast('索引生成失败，请确认 Ollama 正在运行且 bge-m3 模型可用', 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔧 生成索引';
+    }
+}
+
+// ── RAG Mode ──
+
+function toggleRAGMode() {
+    const toggle = document.getElementById('ragToggle');
+    state.ragMode = !state.ragMode;
+    if (state.ragMode) {
+        toggle.classList.add('active');
+    } else {
+        toggle.classList.remove('active');
+    }
 }
 
 async function addNewItem() {
@@ -501,7 +767,136 @@ async function showItemDetail(id) {
         const item = await apiService.getItem(id);
         renderItemDetail(item);
         refreshMath();
+        setTimeout(buildDetailModelSelectors, 200);
     } catch (e) {}
+}
+
+// ── AI 操作：分析 / 生成题目 / 改进写作 ──
+
+async function analyzeItem(itemId) {
+    const resultEl = document.getElementById('aiOpResult');
+    resultEl.textContent = '分析中...';
+    try {
+        const opts = getAIOptions('analyze');
+        const result = await apiService.aiAnalyze(itemId, opts.provider, opts.model);
+        const text = result.analysis || JSON.stringify(result);
+        resultEl.innerHTML = `<div style="max-height:200px;overflow-y:auto;white-space:pre-wrap;">${escapeHtml(text)}</div>`;
+    } catch (e) {
+        resultEl.textContent = '分析失败';
+    }
+}
+
+async function generateQuestions(itemId) {
+    const resultEl = document.getElementById('aiOpResult');
+    resultEl.textContent = '生成中...';
+    try {
+        const opts = getAIOptions('generate_questions');
+        const resp = await apiService.aiGenerateQuestions(itemId, opts.provider, opts.model);
+        const questions = resp.questions || [];
+        if (questions.length > 0) {
+            resultEl.innerHTML = '<ol style="margin:0;padding-left:20px;">' +
+                questions.map(q => `<li style="margin-bottom:4px;">${escapeHtml(q)}</li>`).join('') + '</ol>';
+        } else {
+            resultEl.textContent = '未能生成题目';
+        }
+    } catch (e) {
+        resultEl.textContent = '生成失败';
+    }
+}
+
+async function improveWritingForItem(itemId) {
+    const resultEl = document.getElementById('aiOpResult');
+    resultEl.textContent = '改进中...';
+    try {
+        const item = await apiService.getItem(itemId);
+        const content = item.content || '';
+        const opts = getAIOptions('improve_writing');
+        const resp = await apiService.aiImproveWriting(content, opts.provider, opts.model);
+        const improved = resp.improved_content || resp.error || '改进失败';
+        state._lastImproved = improved;
+        resultEl.innerHTML = `
+            <div style="max-height:200px;overflow-y:auto;white-space:pre-wrap;border:1px solid var(--border-light);padding:8px;border-radius:4px;margin-bottom:8px;">${escapeHtml(improved)}</div>
+            <div style="display:flex;gap:8px;">
+                <button class="btn btn-sm btn-success" onclick="adoptImprovedWriting(${itemId})">✅ 采纳</button>
+                <button class="btn btn-sm btn-outline" onclick="document.getElementById('aiOpResult').innerHTML=''">关闭</button>
+            </div>`;
+    } catch (e) {
+        resultEl.textContent = '改进失败';
+    }
+}
+
+async function adoptImprovedWriting(itemId) {
+    if (!state._lastImproved) return;
+    try {
+        const item = await apiService.getItem(itemId);
+        await apiService.updateItem(itemId, {
+            title: item.title,
+            content: state._lastImproved,
+            category: item.category,
+            importance_level: item.importance_level || 3,
+            understanding_level: item.understanding_level || 3,
+            tags: (item.tag_names || '').split(',').filter(Boolean),
+        });
+        showToast('已采纳改进文本', 'success');
+        document.getElementById('aiOpResult').innerHTML = '';
+    } catch (e) {
+        showToast('采纳失败', 'error');
+    }
+}
+
+// ── 数据库切换 ──
+
+async function showDBSwitcher() {
+    const popup = document.getElementById('dbSwitcherPopup');
+    const list = document.getElementById('dbList');
+    if (popup.style.display !== 'none') {
+        popup.style.display = 'none';
+        return;
+    }
+    const currentDb = document.getElementById('currentDbName').textContent.trim();
+    // 从 run.py 预定义的数据库列表
+    const presetDbs = ['knowledge.db', 'art.db', 'AI.db', 'math.db', 'life.db', 'physics.db'];
+    list.innerHTML = presetDbs.map(db => `
+        <div onclick="switchKnowledgeDB('${db}')" style="padding:6px 8px;cursor:pointer;border-radius:4px;font-size:13px;
+            ${db === currentDb ? 'background:var(--accent);color:#fff;' : ''}">
+            ${db} ${db === currentDb ? ' ✓' : ''}
+        </div>`).join('');
+    popup.style.display = 'block';
+    // 点击外部关闭
+    setTimeout(() => {
+        const handler = (e) => {
+            if (!popup.contains(e.target) && e.target.id !== 'currentDbName') {
+                popup.style.display = 'none';
+                document.removeEventListener('click', handler);
+            }
+        };
+        document.addEventListener('click', handler);
+    }, 100);
+}
+
+async function switchKnowledgeDB(dbName) {
+    try {
+        const result = await apiService.switchDB(dbName);
+        if (result.success) {
+            document.getElementById('currentDbName').textContent = dbName;
+            document.getElementById('dbSwitcherPopup').style.display = 'none';
+            showToast(result.message || `已切换到: ${dbName}`, 'success');
+            loadStats();
+        } else {
+            showToast(result.error || '切换失败', 'error');
+        }
+    } catch (e) {
+        showToast('切换失败', 'error');
+    }
+}
+
+async function createAndSwitchDB() {
+    const input = document.getElementById('newDbName');
+    const dbName = input.value.trim();
+    if (!dbName) { showToast('请输入数据库名', 'warning'); return; }
+    if (!dbName.endsWith('.db')) { showToast('数据库名必须以 .db 结尾', 'warning'); return; }
+    await switchKnowledgeDB(dbName);
+    input.value = '';
 }
 
 async function loadStats() {
@@ -537,6 +932,21 @@ async function loadReviews() {
     } catch (e) {}
 }
 
+async function loadAllReviews() {
+    try {
+        const items = await apiService.getAllReviews();
+        if (items.length === 0) {
+            document.getElementById('reviewContent').innerHTML =
+                '<div class="empty-state"><p>知识库中暂无条目，请先添加知识</p></div>';
+            return;
+        }
+        state.reviewSortMode = 'default';
+        document.getElementById('btnSortDefault').className = 'btn btn-outline btn-sm active';
+        document.getElementById('btnSortAI').className = 'btn btn-outline btn-sm';
+        renderReviews(items);
+    } catch (e) {}
+}
+
 async function confirmDelete(id) {
     if (!confirm('确定要删除这个知识条目吗？此操作不可撤销。')) return;
     try {
@@ -544,6 +954,9 @@ async function confirmDelete(id) {
         showToast('条目已删除', 'success');
         closeModal();
         loadStats();
+        // 刷新列表和知识图谱
+        if (state.currentPanel === 'knowledge') searchItems();
+        if (window.knowledgeGraphNetwork) loadKnowledgeGraph();
     } catch (e) {}
 }
 
@@ -635,9 +1048,14 @@ async function loadRelatedItems(id) {
             return;
         }
         container.innerHTML = items.map(item => `
-            <div class="item-card" onclick="showItemDetail(${item.id})" style="margin-bottom:6px;">
-                <div class="item-card-title">${escapeHtml(item.title)}</div>
-                <div class="item-card-meta">📂 ${escapeHtml(item.category || '')}</div>
+            <div class="item-card" style="margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
+                <div style="flex:1;cursor:pointer;" onclick="showItemDetail(${item.id})">
+                    <div class="item-card-title">${escapeHtml(item.title)}</div>
+                    <div class="item-card-meta">📂 ${escapeHtml(item.category || '')}</div>
+                </div>
+                <button class="btn btn-sm" style="color:#e74c3c;font-size:11px;padding:2px 8px;flex-shrink:0;"
+                        onclick="event.stopPropagation();removeRelationship(${item._rel_source}, ${item._rel_target})"
+                        title="解除关联">✕ 解除</button>
             </div>
         `).join('');
     } catch (e) {}
@@ -656,40 +1074,45 @@ async function rateReview(itemId, rating) {
 }
 
 // ================================================================
-// 9. Knowledge Graph Operations
+// 9. Knowledge Graph Operations (vis.js)
 // ================================================================
-let graphSimulation = null;
 
 async function loadKnowledgeGraph() {
-    const category = document.getElementById('graphCategoryFilter')?.value || '';
+    const filter = document.getElementById('graphCategoryFilter');
+    const category = filter?.value || '';
     try {
         const data = await apiService.getGraph(category);
         renderKnowledgeGraph(data);
-    } catch (e) {}
-    if (state.suggestionEdges.length > 0) {
-        setTimeout(() => renderSuggestedEdges(state.suggestionEdges), 1000);
+    } catch (e) {
+        console.error('加载知识图谱失败:', e);
     }
 }
 
 function resetGraphLayout() {
-    if (graphSimulation) {
-        graphSimulation.nodes().forEach(n => { n.fx = null; n.fy = null; });
-        graphSimulation.alpha(1).restart();
+    const network = window.knowledgeGraphNetwork;
+    if (network) {
+        network.stabilize();
+        setTimeout(() => network.fit(), 1000);
     }
 }
 
 function focusOnImportantNodes() {
-    if (graphSimulation) {
-        const nodes = graphSimulation.nodes();
-        nodes.forEach(n => {
-            if ((n.importance_level || 0) >= 4) {
-                n.fx = null; n.fy = null;
-            } else {
-                n.fx = n.x; n.fy = n.y;
-            }
-        });
-        graphSimulation.alpha(0.5).restart();
+    const network = window.knowledgeGraphNetwork;
+    if (!network) return;
+    const nodes = network.body.data.nodes.get();
+    nodes.forEach(node => {
+        const n = data.nodes.find(n => n.id === node.id);
+        // vis.js doesn't support per-node physics toggling like D3 fx/fy,
+        // so we just select/fit to important nodes
+    });
+    const importantIds = nodes.filter(n => (n.value || 0) >= 4).map(n => n.id);
+    if (importantIds.length > 0) {
+        network.selectNodes(importantIds);
+        network.fit({ nodes: importantIds, animation: true });
+    } else {
+        showToast('没有重要性 >= 4 的节点', 'warning');
     }
+    setTimeout(() => network.unselectAll(), 1500);
 }
 
 async function filterGraphByCategory() {
@@ -697,20 +1120,92 @@ async function filterGraphByCategory() {
 }
 
 // ================================================================
-// 10. AI Chat
+// 10. AI Model Selector
 // ================================================================
 async function loadAIStatus() {
     try {
         const resp = await apiService.aiStatus();
-        if (resp.data && resp.data.providers) {
-            const available = resp.data.providers.filter(p => p.available).map(p => p.name);
-            if (available.length > 0) {
-                document.getElementById('chatInput').placeholder = `AI 就绪 (${available.join(', ')}) — 输入问题...`;
-            }
+        if (resp.data) {
+            state.aiConfig = resp.data;
+            document.getElementById('chatInput').placeholder = 'AI 就绪 — 输入问题...';
         }
     } catch (e) {}
+    renderAllModelSelectors();
 }
 
+function getAIOptions(capability) {
+    // Return {provider, model} from selector, or defaults
+    const sel = state.aiModel[capability];
+    if (sel && sel.provider) return sel;
+    if (state.aiConfig && state.aiConfig.defaults && state.aiConfig.defaults[capability]) {
+        return state.aiConfig.defaults[capability];
+    }
+    return {};
+}
+
+function buildModelSelector(containerId, capability) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    // Don't rebuild if already populated
+    if (container.querySelector('select')) return;
+    if (!state.aiConfig || !state.aiConfig.providers) return;
+
+    const defaults = (state.aiConfig.defaults && state.aiConfig.defaults[capability]) || {};
+    const defaultProvider = defaults.provider || '';
+    const defaultModel = defaults.model || '';
+
+    const sel = document.createElement('select');
+    sel.className = 'form-select ai-model-select';
+    sel.style.cssText = 'font-size:11px;padding:2px 6px;width:auto;max-width:200px;';
+    sel.title = '选择 AI 模型';
+
+    state.aiConfig.providers.forEach(prov => {
+        if (!prov.available) return;
+        if (prov.models && prov.models.length > 0) {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = prov.name;
+            prov.models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = `${prov.name}::${m}`;
+                opt.textContent = `${prov.name}/${m}`;
+                if (prov.name === defaultProvider && m === defaultModel) {
+                    opt.selected = true;
+                    state.aiModel[capability] = { provider: prov.name, model: m };
+                }
+                optgroup.appendChild(opt);
+            });
+            sel.appendChild(optgroup);
+        }
+    });
+
+    sel.addEventListener('change', () => {
+        const [provider, model] = sel.value.split('::');
+        state.aiModel[capability] = { provider, model };
+    });
+
+    container.appendChild(sel);
+}
+
+function renderAllModelSelectors() {
+    buildModelSelector('extractModelSelector', 'extract');
+    buildModelSelector('chatModelSelector', 'chat');
+    buildModelSelector('graphModelSelector', 'discover_relationships');
+    buildModelSelector('gapModelSelector', 'discover_gaps');
+    buildModelSelector('learningModelSelector', 'generate_learning_path');
+    buildModelSelector('reviewModelSelector', 'optimize_review_plan');
+}
+
+// Detail modal selectors (built on-demand in showItemDetail)
+function buildDetailModelSelectors() {
+    buildModelSelector('detailAnalyzeSelector', 'analyze');
+    buildModelSelector('detailQuestionsSelector', 'generate_questions');
+    buildModelSelector('detailImproveSelector', 'improve_writing');
+    buildModelSelector('detailChatSelector', 'chat');
+}
+
+// ================================================================
+// 11. AI Chat
+// ================================================================
 async function sendChatMessage() {
     const input = document.getElementById('chatInput');
     const question = input.value.trim();
@@ -719,15 +1214,24 @@ async function sendChatMessage() {
 
     const messages = document.getElementById('chatMessages');
     messages.innerHTML += `<div class="chat-message user">${escapeHtml(question)}</div>`;
-    messages.innerHTML += '<div class="chat-message assistant" id="chatLoading"><div class="spinner"></div> 思考中...</div>';
+    const modeLabel = state.ragMode ? 'RAG 检索中...' : '思考中...';
+    messages.innerHTML += `<div class="chat-message assistant" id="chatLoading"><div class="spinner"></div> ${modeLabel}</div>`;
     messages.scrollTop = messages.scrollHeight;
 
     try {
-        const result = await apiService.aiChat({
-            question,
-            item_id: state.currentItemId,
-            chat_history: state.chatHistory,
-        });
+        const opts = getAIOptions('chat');
+        let result;
+        if (state.ragMode) {
+            result = await apiService.ragChat(question, state.chatHistory, opts.provider, opts.model);
+        } else {
+            result = await apiService.aiChat({
+                question,
+                item_id: state.currentItemId,
+                chat_history: state.chatHistory,
+                provider: opts.provider,
+                model: opts.model,
+            });
+        }
         document.getElementById('chatLoading')?.remove();
         const answer = result.answer || result.content || JSON.stringify(result);
         const thinking = result.thinking || '';
@@ -736,6 +1240,20 @@ async function sendChatMessage() {
             html += `<details style="margin-bottom:8px;"><summary style="cursor:pointer;color:var(--text-tertiary);font-size:12px;">思考过程</summary><p style="color:var(--text-tertiary);font-size:12px;white-space:pre-wrap;">${escapeHtml(thinking)}</p></details>`;
         }
         html += `<div style="white-space:pre-wrap;">${simpleMarkdownRender(answer)}</div>`;
+
+        // Show RAG sources
+        if (result.sources && result.sources.length > 0) {
+            html += `<details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--accent);font-size:11px;">📚 参考来源 (${result.sources.length})</summary>`;
+            html += result.sources.map((s, i) => `
+                <div style="margin:4px 0;padding:4px 8px;background:var(--bg-tertiary);border-radius:4px;font-size:11px;cursor:pointer;"
+                     onclick="showItemDetail(${s.id})">
+                    <span style="color:var(--accent);">${(s.score * 100).toFixed(0)}%</span>
+                    <span style="font-weight:500;">${escapeHtml(s.title)}</span>
+                    ${s.snippet ? `<span style="color:var(--text-tertiary);"> — ${escapeHtml(s.snippet)}</span>` : ''}
+                </div>`).join('');
+            html += '</details>';
+        }
+
         messages.innerHTML += `<div class="chat-message assistant">${html}</div>`;
         state.chatHistory.push({ role: 'user', content: question }, { role: 'assistant', content: answer });
     } catch (e) {
@@ -750,6 +1268,70 @@ function clearChatHistory() {
     document.getElementById('chatMessages').innerHTML = `
         <div class="chat-message assistant">聊天历史已清空。有什么我可以帮你的？</div>
     `;
+}
+
+// ── Per-item AI chat ──
+
+async function sendItemChatMessage(itemId) {
+    const input = document.getElementById('itemChatInput');
+    const question = input.value.trim();
+    if (!question) return;
+    input.value = '';
+
+    const messages = document.getElementById('itemChatMessages');
+    const history = state._itemChatHistory || [];
+    history.push({ role: 'user', content: question });
+
+    // Add user message
+    const userMsg = document.createElement('div');
+    userMsg.className = 'chat-message user';
+    userMsg.textContent = question;
+    messages.appendChild(userMsg);
+
+    // Add loading placeholder
+    const loadingMsg = document.createElement('div');
+    loadingMsg.className = 'chat-message assistant';
+    loadingMsg.textContent = '思考中...';
+    loadingMsg.id = 'itemChatLoading';
+    messages.appendChild(loadingMsg);
+    messages.scrollTop = messages.scrollHeight;
+
+    try {
+        const opts = getAIOptions('chat');
+        const resp = await api('/api/ai/chat', {
+            method: 'POST',
+            body: JSON.stringify({
+                question, item_id: itemId,
+                chat_history: history.slice(0, -1),
+                provider: opts.provider, model: opts.model,
+            }),
+        });
+
+        loadingMsg.remove();
+        const answer = resp.answer || resp.error || '抱歉，无法处理该问题。';
+        history.push({ role: 'assistant', content: answer });
+        state._itemChatHistory = history;
+
+        const assistantMsg = document.createElement('div');
+        assistantMsg.className = 'chat-message assistant';
+        assistantMsg.innerHTML = renderMarkdown(answer);
+        messages.appendChild(assistantMsg);
+    } catch (e) {
+        loadingMsg.remove();
+        const errMsg = document.createElement('div');
+        errMsg.className = 'chat-message assistant';
+        errMsg.textContent = 'AI 服务出错，请重试';
+        messages.appendChild(errMsg);
+    }
+    messages.scrollTop = messages.scrollHeight;
+}
+
+function clearItemChat() {
+    state._itemChatHistory = [];
+    const messages = document.getElementById('itemChatMessages');
+    if (messages) {
+        messages.innerHTML = '<div class="chat-message assistant" style="font-size:12px;">对话已清空。你可以继续提问。</div>';
+    }
 }
 
 function renderMarkdown(text) {
@@ -940,6 +1522,53 @@ async function importFromTextFiles() {
     }
 }
 
+// ── JSON 批量导入 ──
+
+async function importFromJSON() {
+    const fileInput = document.getElementById('jsonFileInput');
+    const file = fileInput?.files[0];
+    if (!file) { showToast('请选择 JSON 文件', 'warning'); return; }
+
+    showUploadProgress('jsonImportProgress', true);
+    try {
+        // Read file client-side
+        const text = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error('读取文件失败'));
+            reader.readAsText(file);
+        });
+
+        let items;
+        try {
+            items = JSON.parse(text);
+        } catch (e) {
+            showToast('JSON 格式解析失败', 'error');
+            showUploadProgress('jsonImportProgress', false);
+            return;
+        }
+
+        if (!Array.isArray(items)) {
+            showToast('JSON 格式错误：应为数组', 'error');
+            showUploadProgress('jsonImportProgress', false);
+            return;
+        }
+
+        const result = await apiService.importJSONData(items);
+        if (result.success) {
+            showToast(`批量导入完成: 成功 ${result.imported} 条, 跳过 ${result.skipped} 条`, 'success');
+            loadStats();
+        } else {
+            showToast(result.error || '导入失败', 'error');
+        }
+    } catch (e) {
+        showToast('导入失败: ' + (e.message || '未知错误'), 'error');
+    } finally {
+        showUploadProgress('jsonImportProgress', false);
+        fileInput.value = '';
+    }
+}
+
 function refreshMath() {
     if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
         MathJax.typesetPromise().catch(() => {});
@@ -1049,22 +1678,48 @@ function switchExtractTab(tab) {
 
 async function loadFileList() {
     try {
-        const items = await apiService.getRecent();
-        const files = [];
-        const seen = new Set();
-        for (const item of items) {
-            if (item.source_details && item.source_type === 'file') {
-                const name = item.source_details.replace(/^files[\\/]/, '');
-                if (!seen.has(name)) {
-                    seen.add(name);
-                    files.push(name);
-                }
-            }
-        }
+        const result = await apiService.listExtractableFiles();
+        const files = result.files || [];
         const select = document.getElementById('extractFileSelect');
-        select.innerHTML = '<option value="">-- 选择文件 --</option>' +
-            files.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
-    } catch (e) {}
+        if (files.length === 0) {
+            select.innerHTML = '<option value="">-- 暂无文件，请先上传 --<option>';
+        } else {
+            select.innerHTML = '<option value="">-- 选择文件 --</option>' +
+                files.map(f => `<option value="${escapeHtml(f.name)}">${escapeHtml(f.name)} (${formatFileSize(f.size)})</option>`).join('');
+        }
+    } catch (e) {
+        const select = document.getElementById('extractFileSelect');
+        select.innerHTML = '<option value="">-- 加载失败，请刷新重试 --</option>';
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + 'B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + 'MB';
+}
+
+async function handleExtractFileUpload(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('files', file);
+    formData.append('file_type', 'files');
+    try {
+        const result = await fetch(API_BASE + '/api/upload', { method: 'POST', body: formData }).then(r => r.json());
+        if (result.success && result.file_details && result.file_details.length > 0) {
+            const uploadedName = result.file_details[0].original_name;
+            showToast(`文件已上传: ${uploadedName}`, 'success');
+            await loadFileList();
+            const select = document.getElementById('extractFileSelect');
+            if (select) select.value = uploadedName;
+        } else {
+            showToast('上传失败: ' + (result.error || '未知错误'), 'error');
+        }
+    } catch (e) {
+        showToast('上传失败', 'error');
+    }
+    input.value = '';
 }
 
 function showExtractLoading() {
@@ -1117,7 +1772,8 @@ async function extractFromURL() {
     if (!url) { showToast('请输入URL', 'warning'); return; }
     showExtractLoading();
     try {
-        const result = await apiService.extractURL(url);
+        const opts = getAIOptions('extract');
+        const result = await apiService.extractURL(url, opts.provider, opts.model);
         if (state.quickMode) {
             await saveExtractedItem(result);
         } else {
@@ -1131,7 +1787,8 @@ async function extractFromText() {
     if (!text) { showToast('请输入文本内容', 'warning'); return; }
     showExtractLoading();
     try {
-        const result = await apiService.extractText(text);
+        const opts = getAIOptions('extract');
+        const result = await apiService.extractText(text, opts.provider, opts.model);
         if (state.quickMode) {
             await saveExtractedItem(result);
         } else {
@@ -1145,7 +1802,8 @@ async function extractFromFile() {
     if (!filename) { showToast('请选择文件', 'warning'); return; }
     showExtractLoading();
     try {
-        const result = await apiService.extractFile(filename);
+        const opts = getAIOptions('extract');
+        const result = await apiService.extractFile(filename, opts.provider, opts.model);
         if (state.quickMode) {
             await saveExtractedItem(result);
         } else {
@@ -1253,14 +1911,19 @@ async function showCategoryItems(cat) {
             gapContainer.innerHTML = `
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
                     <span style="font-size:13px;color:var(--text-secondary);">分类: <strong>${escapeHtml(cat)}</strong> (${items.length} 条)</span>
-                    <button class="btn btn-outline btn-sm" onclick="discoverGaps('${escapeHtml(cat)}')" id="btnGapAnalysis">
-                        🤖 AI 缺口分析
-                    </button>
+                    <span style="display:flex;align-items:center;gap:8px;">
+                        <span id="gapModelSelector" style="display:inline-block;"></span>
+                        <button class="btn btn-outline btn-sm" onclick="discoverGaps('${escapeHtml(cat)}')" id="btnGapAnalysis">
+                            🤖 AI 缺口分析
+                        </button>
+                    </span>
                 </div>
                 <div id="gapResults"></div>
             `;
+            buildModelSelector('gapModelSelector', 'discover_gaps');
         }
         renderSearchResults(items);
+        showExportToolbar();
     } catch (e) {}
 }
 
@@ -1268,6 +1931,7 @@ async function showTagItems(tag) {
     try {
         const items = await apiService.getTagItems(tag);
         renderSearchResults(items);
+        showExportToolbar();
     } catch (e) {}
 }
 
@@ -1338,7 +2002,8 @@ async function loadAIReviewPlan() {
             renderReviews([]);
             return;
         }
-        const plan = await apiService.optimizeReviewPlan(7);
+        const opts = getAIOptions('optimize_review_plan');
+        const plan = await apiService.optimizeReviewPlan(7, opts.provider, opts.model);
         state.cachedReviewPlan = plan;
 
         const notes = document.getElementById('strategyNotes');
@@ -1392,6 +2057,137 @@ function renderReviewsWithPriority(items, priorityMap) {
     }).join('');
 }
 
+// ── 手动创建关联 ──
+
+async function aiSuggestRelated(itemId) {
+    const resultDiv = document.getElementById('aiSuggestResults');
+    const btn = document.getElementById('btnAISuggestRel');
+    resultDiv.innerHTML = '<div style="padding:8px;font-size:12px;color:var(--text-tertiary);">AI 正在分析知识库...</div>';
+    if (btn) { btn.disabled = true; btn.textContent = '分析中...'; }
+    try {
+        const opts = getAIOptions('discover_relationships');
+        const resp = await apiService.suggestRelated(itemId, opts.provider, opts.model);
+        const suggestions = resp.suggestions || [];
+        if (suggestions.length === 0) {
+            resultDiv.innerHTML = '<div style="padding:8px;font-size:12px;color:var(--text-tertiary);">未发现合适的关联建议</div>';
+        } else {
+            resultDiv.innerHTML = '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;font-weight:500;">AI 建议关联以下条目：</div>' +
+                suggestions.map((s, i) => `
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:var(--bg-secondary);border-radius:6px;margin-bottom:4px;gap:8px;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="font-size:13px;font-weight:500;">ID:${s.id} — ${escapeHtml(s.type || 'related_to')} (强度:${s.strength || 3})</div>
+                            <div style="font-size:11px;color:var(--text-tertiary);">${escapeHtml(s.reason || '')}</div>
+                        </div>
+                        <button class="btn btn-sm btn-success" style="flex-shrink:0;font-size:11px;"
+                            onclick="quickAddRelationship(${itemId}, ${s.id}, '${s.type || 'related_to'}', ${s.strength || 3}, ${i})">✅ 采纳</button>
+                    </div>`).join('');
+        }
+    } catch (e) {
+        resultDiv.innerHTML = '<div style="padding:8px;font-size:12px;color:var(--danger);">AI 建议失败</div>';
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '🤖 AI 建议关联'; }
+}
+
+async function quickAddRelationship(sourceId, targetId, relType, strength, resultIndex) {
+    try {
+        await apiService.createRelationship({
+            source_id: sourceId, target_id: targetId,
+            relationship_type: relType, strength: strength,
+        });
+        showToast('关联已添加', 'success');
+        loadRelatedItems(sourceId);
+        // Remove this suggestion from the list
+        const container = document.getElementById('aiSuggestResults');
+        const items = container.querySelectorAll('div[style]');
+        // Refresh AI suggestions
+        const remaining = container.querySelectorAll('button');
+        if (remaining.length <= 1) {
+            container.innerHTML = '<div style="padding:8px;font-size:12px;color:var(--success);">所有建议已采纳</div>';
+        }
+        if (window.knowledgeGraphNetwork) loadKnowledgeGraph();
+    } catch (e) { showToast('添加失败', 'error'); }
+}
+
+function showAddRelationship() {
+    document.getElementById('addRelationshipForm').style.display = 'block';
+    document.getElementById('relSearchInput').value = '';
+    document.getElementById('relSearchResults').innerHTML = '';
+    document.getElementById('relSearchInput').focus();
+}
+
+function cancelAddRelationship() {
+    document.getElementById('addRelationshipForm').style.display = 'none';
+}
+
+let _relSearchTimer = null;
+async function searchRelTarget(query) {
+    clearTimeout(_relSearchTimer);
+    _relSearchTimer = setTimeout(async () => {
+        const container = document.getElementById('relSearchResults');
+        if (!query) { container.innerHTML = ''; return; }
+        try {
+            const result = await apiService.searchItems(query);
+            if (result.success && result.items.length > 0) {
+                const currentId = state.currentItemId;
+                container.innerHTML = result.items
+                    .filter(item => item.id !== currentId)
+                    .map(item => `
+                        <div onclick="selectRelTarget(${item.id}, '${escapeHtml(item.title.replace(/'/g, "\\'"))}')"
+                             style="padding:6px 8px;cursor:pointer;border-bottom:1px solid var(--border-light);font-size:13px;">
+                            <span style="font-weight:500;">${escapeHtml(item.title)}</span>
+                            <span style="color:var(--text-tertiary);margin-left:8px;font-size:11px;">${escapeHtml(item.category || '')}</span>
+                        </div>`).join('');
+            } else {
+                container.innerHTML = '<p style="padding:8px;color:var(--text-tertiary);font-size:12px;">无匹配条目</p>';
+            }
+        } catch (e) { container.innerHTML = ''; }
+    }, 300);
+}
+
+function selectRelTarget(id, title) {
+    document.getElementById('relSearchInput').value = title;
+    document.getElementById('relSearchInput').dataset.targetId = id;
+    document.getElementById('relSearchResults').innerHTML = '';
+}
+
+async function confirmAddRelationship() {
+    const targetId = parseInt(document.getElementById('relSearchInput').dataset.targetId);
+    if (!targetId) { showToast('请先搜索并选择目标条目', 'warning'); return; }
+    const sourceId = state.currentItemId;
+    const relType = document.getElementById('relType').value;
+    const strength = parseInt(document.getElementById('relStrength').value);
+    try {
+        const result = await apiService.createRelationship({
+            source_id: sourceId, target_id: targetId,
+            relationship_type: relType, strength: strength,
+        });
+        if (result.success) {
+            showToast('关联已创建', 'success');
+            cancelAddRelationship();
+            loadRelatedItems(sourceId);
+            if (window.knowledgeGraphNetwork) loadKnowledgeGraph();
+        } else {
+            showToast(result.error || '创建失败', 'error');
+        }
+    } catch (e) { showToast('创建失败', 'error'); }
+}
+
+async function removeRelationship(sourceId, targetId) {
+    if (!confirm('确定要解除此关联吗？')) return;
+    try {
+        const result = await apiService.deleteRelationship({
+            source_id: sourceId, target_id: targetId,
+        });
+        if (result.success) {
+            showToast('关联已解除', 'success');
+            loadRelatedItems(state.currentItemId);
+            if (window.knowledgeGraphNetwork) loadKnowledgeGraph();
+        } else {
+            showToast(result.error || '解除失败', 'error');
+        }
+    } catch (e) { showToast('解除失败', 'error'); }
+}
+
 // ================================================================
 // 14. AI Relationship Discovery (Knowledge Graph)
 // ================================================================
@@ -1410,77 +2206,75 @@ async function discoverRelationships() {
         }
 
         const filterVal = document.getElementById('graphCategoryFilter');
+        const opts = getAIOptions('discover_relationships');
         const result = await apiService.discoverRelationships({
             scope: filterVal && filterVal.value ? 'category' : 'all',
             category: filterVal ? filterVal.value : '',
             limit: 30,
+            provider: opts.provider,
+            model: opts.model,
         });
 
         if (result.suggestions && result.suggestions.length > 0) {
             state.suggestionEdges = result.suggestions;
             document.getElementById('suggestionCount').textContent = result.suggestions.length;
             document.getElementById('graphSuggestionControls').style.display = '';
-            // Reload graph first, then overlay suggested edges
-            loadKnowledgeGraph();
-            setTimeout(() => renderSuggestedEdges(result.suggestions), 1200);
+            renderSuggestedEdges(result.suggestions);
         } else {
             showToast('未发现新的关联建议', 'success');
             state.suggestionEdges = [];
         }
     } catch (e) {
-        // Error toast handled by api()
+        // Error handled by api()
     }
     btn.disabled = false;
     btn.textContent = '🤖 AI 发现关联';
 }
 
 function renderSuggestedEdges(suggestions) {
-    const container = document.getElementById('graphContainer');
-    const svg = container ? container.querySelector('svg') : null;
-    if (!svg) return;
+    const network = window.knowledgeGraphNetwork;
+    if (!network) {
+        setTimeout(() => renderSuggestedEdges(suggestions), 500);
+        return;
+    }
 
-    const g = svg.querySelector('g');
-    if (!g) return;
-
-    // Remove old suggested edges
-    g.querySelectorAll('line.suggested-edge').forEach(l => l.remove());
-
-    const nodes = graphSimulation ? graphSimulation.nodes() : [];
-
-    suggestions.forEach((sug, idx) => {
-        const src = nodes.find(n => n.id === sug.source_id);
-        const tgt = nodes.find(n => n.id === sug.target_id);
-        if (!src || !tgt) return;
-
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('class', 'suggested-edge');
-        line.setAttribute('x1', src.x);
-        line.setAttribute('y1', src.y);
-        line.setAttribute('x2', tgt.x);
-        line.setAttribute('y2', tgt.y);
-        line.setAttribute('data-sid', sug.source_id);
-        line.setAttribute('data-tid', sug.target_id);
-        line.setAttribute('data-idx', idx);
-
-        line.addEventListener('mouseenter', (e) => {
-            const tooltip = document.createElement('div');
-            tooltip.className = 'edge-tooltip';
-            tooltip.id = 'edgeTooltip';
-            tooltip.innerHTML = `<strong>${escapeHtml(sug.type || 'related_to')}</strong><br>${escapeHtml(sug.reason || '')}<br><span style="font-size:10px;color:var(--text-tertiary);">强度: ${sug.strength || 3}/5 | 点击采纳</span>`;
-            document.body.appendChild(tooltip);
-            tooltip.style.left = (e.clientX + 10) + 'px';
-            tooltip.style.top = (e.clientY - 10) + 'px';
-        });
-
-        line.addEventListener('mouseleave', () => {
-            const tt = document.getElementById('edgeTooltip');
-            if (tt) tt.remove();
-        });
-
-        line.addEventListener('click', () => adoptSuggestion(idx));
-
-        g.appendChild(line);
+    // Remove previous suggested edges
+    const existingEdges = network.body.data.edges.get();
+    existingEdges.forEach(edge => {
+        if (edge.id && String(edge.id).startsWith('sug_')) {
+            network.body.data.edges.remove(edge.id);
+        }
     });
+
+    // Add suggested edges as dashed
+    suggestions.forEach((sug, idx) => {
+        try {
+            network.body.data.edges.add({
+                id: 'sug_' + idx,
+                from: sug.source_id,
+                to: sug.target_id,
+                arrows: 'to',
+                dashes: true,
+                color: { color: '#f39c12', highlight: '#f1c40f' },
+                width: 1.5,
+                title: `${sug.type || 'related_to'}: ${sug.reason || ''} (强度: ${sug.strength || 3}/5)`,
+            });
+        } catch (e) {}
+    });
+
+    // Click handler for suggested edges (one-time setup)
+    if (!network._sugClickBound) {
+        network._sugClickBound = true;
+        network.on('click', function(params) {
+            if (params.edges.length > 0) {
+                const edgeId = params.edges[0];
+                if (String(edgeId).startsWith('sug_')) {
+                    const idx = parseInt(String(edgeId).replace('sug_', ''));
+                    adoptSuggestion(idx);
+                }
+            }
+        });
+    }
 }
 
 async function adoptSuggestion(idx) {
@@ -1498,10 +2292,8 @@ async function adoptSuggestion(idx) {
         document.getElementById('suggestionCount').textContent = state.suggestionEdges.length;
         if (state.suggestionEdges.length === 0) {
             clearSuggestions();
-            loadKnowledgeGraph();
         } else {
-            loadKnowledgeGraph();
-            setTimeout(() => renderSuggestedEdges(state.suggestionEdges), 1200);
+            renderSuggestedEdges(state.suggestionEdges);
         }
     } catch (e) {}
 }
@@ -1527,13 +2319,16 @@ function clearSuggestions() {
     state.suggestionEdges = [];
     const controls = document.getElementById('graphSuggestionControls');
     if (controls) controls.style.display = 'none';
-    const svg = document.querySelector('#graphContainer svg');
-    if (svg) {
-        const g = svg.querySelector('g');
-        if (g) g.querySelectorAll('line.suggested-edge').forEach(l => l.remove());
+    // Remove suggested edges from vis.js
+    const network = window.knowledgeGraphNetwork;
+    if (network) {
+        const existingEdges = network.body.data.edges.get();
+        existingEdges.forEach(edge => {
+            if (edge.id && String(edge.id).startsWith('sug_')) {
+                network.body.data.edges.remove(edge.id);
+            }
+        });
     }
-    const tt = document.getElementById('edgeTooltip');
-    if (tt) tt.remove();
 }
 
 // ================================================================
@@ -1548,7 +2343,8 @@ async function discoverGaps(category) {
     }
 
     try {
-        const result = await apiService.discoverGaps(category);
+        const opts = getAIOptions('discover_gaps');
+        const result = await apiService.discoverGaps(category, opts.provider, opts.model);
         renderGapResults(result, category);
     } catch (e) {}
     if (btn) {
@@ -1564,7 +2360,9 @@ function renderGapResults(result, category) {
         container.innerHTML = '<div style="padding:10px;font-size:13px;color:var(--text-secondary);">未发现明显知识缺口，该分类覆盖较完整。</div>';
         return;
     }
+    let gapIndex = 0;
     container.innerHTML = result.gaps.map(gap => {
+        const idx = gapIndex++;
         const stars = Array.from({length: 5}, (_, i) => {
             return `<span class="star${i < (gap.importance || 3) ? ' filled' : ''}">★</span>`;
         }).join('');
@@ -1572,7 +2370,7 @@ function renderGapResults(result, category) {
             `<span class="kw-tag">${escapeHtml(k)}</span>`
         ).join('');
         return `
-        <div class="gap-card">
+        <div class="gap-card" id="gapCard${idx}">
             <div class="gap-card-body">
                 <div class="gap-card-topic">
                     ${escapeHtml(gap.topic)}
@@ -1583,9 +2381,20 @@ function renderGapResults(result, category) {
             </div>
             <div class="gap-card-action">
                 <button class="btn btn-primary btn-sm" onclick="addFromGap('${escapeHtml(gap.topic).replace(/'/g, "&#39;")}', '${escapeHtml(category).replace(/'/g, "&#39;")}')">添加</button>
+                <button class="btn btn-outline btn-sm" onclick="dismissGapCard(${idx})">忽略</button>
             </div>
         </div>`;
     }).join('');
+}
+
+function dismissGapCard(idx) {
+    const card = document.getElementById('gapCard' + idx);
+    if (card) {
+        card.style.opacity = '0';
+        card.style.transform = 'translateX(20px)';
+        card.style.transition = 'all 0.3s ease';
+        setTimeout(() => card.remove(), 300);
+    }
 }
 
 function addFromGap(topic, category) {
@@ -1606,6 +2415,18 @@ function addFromGap(topic, category) {
 // 16. AI Learning Path Generation (Review Panel)
 // ================================================================
 
+const LEARNING_PATHS_KEY = 'saved_learning_paths';
+
+function getSavedPaths() {
+    try {
+        return JSON.parse(localStorage.getItem(LEARNING_PATHS_KEY) || '[]');
+    } catch (e) { return []; }
+}
+
+function savePathsToStorage(paths) {
+    localStorage.setItem(LEARNING_PATHS_KEY, JSON.stringify(paths));
+}
+
 async function generateLearningPath() {
     const goal = document.getElementById('learningGoal').value.trim();
     if (!goal) { showToast('请输入学习目标', 'warning'); return; }
@@ -1614,7 +2435,9 @@ async function generateLearningPath() {
     container.innerHTML = '<div class="loading"><div class="spinner"></div>AI 正在设计学习路径...</div>';
 
     try {
-        const result = await apiService.generateLearningPath(goal);
+        const opts = getAIOptions('generate_learning_path');
+        const result = await apiService.generateLearningPath(goal, null, opts.provider, opts.model);
+        state._lastLearningPath = result;
         renderLearningPath(result);
     } catch (e) {
         container.innerHTML = '<div class="empty-state"><p>生成失败，请重试</p></div>';
@@ -1628,10 +2451,13 @@ function renderLearningPath(result) {
         return;
     }
 
-    let html = `<div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary);">
-        学习目标: <strong>${escapeHtml(result.goal)}</strong> |
-        预计总时长: <strong>${result.total_estimated_hours || 'N/A'} 小时</strong>
-        ${result.provider ? ' | via ' + escapeHtml(result.provider) + '/' + escapeHtml(result.model || '') : ''}
+    let html = `<div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <span>学习目标: <strong>${escapeHtml(result.goal)}</strong> | 预计总时长: <strong>${result.total_estimated_hours || 'N/A'} 小时</strong>
+        ${result.provider ? ' | via ' + escapeHtml(result.provider) + '/' + escapeHtml(result.model || '') : ''}</span>
+        <span style="display:flex;gap:4px;">
+            <button class="btn btn-sm btn-primary" onclick="saveLearningPath()">💾 保存路径</button>
+            <button class="btn btn-sm btn-outline" onclick="exportLearningPath()">📥 导出JSON</button>
+        </span>
     </div>`;
 
     html += '<div class="learning-timeline">';
@@ -1644,6 +2470,9 @@ function renderLearningPath(result) {
         const items = (stage.item_ids || []).map(id =>
             `<span class="timeline-item-link" onclick="showItemDetail(${id})">📄 #${id}</span>`
         ).join('');
+        const resources = (stage.resources || []).map(r =>
+            `<span style="display:inline-block;margin:2px;padding:2px 6px;background:var(--bg-secondary);border-radius:3px;font-size:11px;">📚 ${escapeHtml(r)}</span>`
+        ).join('');
 
         html += `
         <div class="timeline-stage" data-order="${stage.order || '?'}">
@@ -1653,6 +2482,7 @@ function renderLearningPath(result) {
             </div>
             ${prereqs}
             <div class="timeline-concepts">${concepts}</div>
+            ${resources ? `<div style="margin-top:4px;">${resources}</div>` : ''}
             ${items ? `<div class="timeline-items">${items}</div>` : ''}
             ${stage.mastery_criteria ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:8px;">✅ ${escapeHtml(stage.mastery_criteria)}</div>` : ''}
         </div>`;
@@ -1667,6 +2497,128 @@ function renderLearningPath(result) {
     }
 
     container.innerHTML = html;
+    renderSavedPathsList();
+}
+
+function saveLearningPath() {
+    const result = state._lastLearningPath;
+    if (!result || !result.stages) return;
+    const paths = getSavedPaths();
+    const entry = {
+        id: Date.now(),
+        goal: result.goal,
+        stages: result.stages,
+        missing_topics: result.missing_topics || [],
+        total_estimated_hours: result.total_estimated_hours || 0,
+        saved_at: new Date().toISOString(),
+    };
+    paths.unshift(entry);
+    savePathsToStorage(paths);
+    showToast('学习路径已保存', 'success');
+    renderSavedPathsList();
+}
+
+function deleteSavedPath(id) {
+    if (!confirm('确定要删除此学习路径吗？')) return;
+    let paths = getSavedPaths();
+    paths = paths.filter(p => p.id !== id);
+    savePathsToStorage(paths);
+    showToast('已删除', 'success');
+    renderSavedPathsList();
+}
+
+function loadSavedPath(id) {
+    const paths = getSavedPaths();
+    const entry = paths.find(p => p.id === id);
+    if (!entry) return;
+    state._lastLearningPath = {
+        goal: entry.goal,
+        stages: entry.stages,
+        missing_topics: entry.missing_topics || [],
+        total_estimated_hours: entry.total_estimated_hours || 0,
+    };
+    renderLearningPath(state._lastLearningPath);
+    showToast('已加载学习路径', 'success');
+}
+
+function exportLearningPath() {
+    const result = state._lastLearningPath;
+    if (!result) return;
+    const data = {
+        goal: result.goal,
+        stages: result.stages,
+        missing_topics: result.missing_topics || [],
+        total_estimated_hours: result.total_estimated_hours || 0,
+        exported_at: new Date().toISOString(),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `learning_path_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function importLearningPath() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+            const text = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsText(file);
+            });
+            const data = JSON.parse(text);
+            if (!data.stages || !data.goal) {
+                showToast('JSON 格式错误：缺少 goal 或 stages 字段', 'error');
+                return;
+            }
+            state._lastLearningPath = data;
+            renderLearningPath(data);
+            showToast('学习路径已导入', 'success');
+        } catch (e) {
+            showToast('导入失败: JSON 解析错误', 'error');
+        }
+    };
+    input.click();
+}
+
+function renderSavedPathsList() {
+    const container = document.getElementById('learningPathContent');
+    const paths = getSavedPaths();
+    if (paths.length === 0) return;
+
+    // Append saved paths list after current content
+    const existing = document.getElementById('savedPathsSection');
+    if (existing) existing.remove();
+
+    const section = document.createElement('div');
+    section.id = 'savedPathsSection';
+    section.style.marginTop = '24px';
+    section.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <h4 style="margin:0;">已保存的学习路径 (${paths.length})</h4>
+            <button class="btn btn-sm btn-outline" onclick="importLearningPath()">📥 导入路径</button>
+        </div>
+        ${paths.map(p => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:4px;background:var(--bg-tertiary);border-radius:6px;">
+                <div style="flex:1;cursor:pointer;" onclick="loadSavedPath(${p.id})">
+                    <div style="font-weight:500;font-size:13px;">${escapeHtml(p.goal)}</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);">
+                        ${p.stages.length} 阶段 | ${p.total_estimated_hours || '?'}h | 保存于 ${formatDate(p.saved_at)}
+                    </div>
+                </div>
+                <button class="btn btn-sm" style="color:#e74c3c;" onclick="deleteSavedPath(${p.id})">🗑</button>
+            </div>
+        `).join('')}
+    `;
+    container.appendChild(section);
 }
 
 // ================================================================

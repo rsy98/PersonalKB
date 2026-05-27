@@ -8,7 +8,9 @@ from ai import AIService, load_config
 
 class KnowledgeCLI:
     def __init__(self):
-        self.manager = KnowledgeManager()
+        import os
+        db_path = os.environ.get('CURRENT_DATABASE', 'knowledge.db')
+        self.manager = KnowledgeManager(db_path)
         self.running = True
         try:
             ai_config = load_config('config/ai.yaml')

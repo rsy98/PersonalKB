@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # run.py - 一键启动脚本（支持命令行参数）
+# -*- coding: utf-8 -*-
+import sys
+# 在 Windows GBK 环境下强制 stdout 使用 utf-8
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
 import os
-import sys
 import glob
 import argparse
 
@@ -56,18 +60,9 @@ def initialize_database(db_filename):
     return True
 
 def set_current_database(db_filename):
-    """设置当前数据库到web_interface模块"""
-    try:
-        # 通过环境变量传递
-        os.environ['CURRENT_DATABASE'] = db_filename
-
-        # 直接修改web_interface的全局变量
-        import web_interface
-        web_interface._current_db = db_filename
-        print(f"🔗 已设置当前数据库: {db_filename}")
-
-    except Exception as e:
-        print(f"⚠️  设置数据库时出现警告: {e}")
+    """设置当前数据库"""
+    os.environ['CURRENT_DATABASE'] = db_filename
+    print(f"🔗 已设置当前数据库: {db_filename}")
 
 def start_web_interface(selected_db):
     """启动Web界面"""
@@ -83,8 +78,8 @@ def start_web_interface(selected_db):
     print("✅ 已自动打开浏览器")
 
     try:
-        import web_interface
-        from web_interface import app
+        from web import create_app
+        app = create_app()
 
         app.run(debug=False, host='127.0.0.1', port=5000, use_reloader=False)
 
@@ -102,7 +97,7 @@ def main():
     if args.db:
         # 直接指定数据库
         selected_db = args.db
-        print(f"🎯 使用指定数据库: {selected_db}")
+        print(f"[OK] 使用指定数据库: {selected_db}")
     elif args.auto:
         # 自动模式
         selected_db = auto_select_database()

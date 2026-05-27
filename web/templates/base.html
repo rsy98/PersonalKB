@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}个人知识管理系统{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- MathJax for LaTeX rendering -->
+    <script>
+    MathJax = {
+        tex: { inlineMath: [['$','$'], ['\\(','\\)']], displayMath: [['$$','$$'], ['\\[','\\]']] },
+        options: { ignoreHtmlClass: 'no-mathjax' }
+    };
+    </script>
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <!-- vis-network for knowledge graph -->
+    <script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/vis-network@9.1.6/styles/vis-network.min.css" />
+    {% block head_extra %}{% endblock %}
+    <!-- Theme init: set data-theme before page render to prevent flash -->
+    <script>
+    (function() {
+        const saved = localStorage.getItem('theme');
+        if (saved) {
+            document.documentElement.setAttribute('data-theme', saved);
+        }
+    })();
+    </script>
+</head>
+<body>
+    <!-- Mobile hamburger menu button -->
+    <button class="hamburger" id="hamburgerBtn" aria-label="Menu" onclick="toggleSidebar()">
+        <span></span><span></span><span></span>
+    </button>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h1 class="sidebar-logo">知识库</h1>
+            <span class="sidebar-db" id="currentDbName" onclick="showDBSwitcher()" title="点击切换数据库" style="cursor:pointer;">knowledge.db</span>
+            <div id="dbSwitcherPopup" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:8px;padding:8px;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                <div id="dbList" style="max-height:200px;overflow-y:auto;"></div>
+                <div style="margin-top:6px;display:flex;gap:4px;">
+                    <input type="text" class="form-input" id="newDbName" placeholder="新数据库名.db" style="font-size:12px;padding:4px 8px;">
+                    <button class="btn btn-sm btn-primary" onclick="createAndSwitchDB()" style="font-size:11px;white-space:nowrap;">创建</button>
+                </div>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a class="nav-item active" data-panel="knowledge" onclick="switchPanel('knowledge')">
+                <span class="nav-icon">📝</span>
+                <span class="nav-label">知识管理</span>
+            </a>
+            <a class="nav-item" data-panel="review" onclick="switchPanel('review')">
+                <span class="nav-icon">📖</span>
+                <span class="nav-label">复习</span>
+                <span class="nav-badge" id="reviewBadge" style="display:none">0</span>
+            </a>
+            <a class="nav-item" data-panel="graph" onclick="switchPanel('graph')">
+                <span class="nav-icon">🕸</span>
+                <span class="nav-label">知识图谱</span>
+            </a>
+            <a class="nav-item" data-panel="ai" onclick="switchPanel('ai')">
+                <span class="nav-icon">🤖</span>
+                <span class="nav-label">AI 助手</span>
+            </a>
+            <a class="nav-item" data-panel="upload" onclick="switchPanel('upload')">
+                <span class="nav-icon">📤</span>
+                <span class="nav-label">上传管理</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+                <span class="theme-icon-dark">🌙</span>
+                <span class="theme-icon-light">☀️</span>
+            </button>
+            <button class="sidebar-collapse" onclick="toggleSidebar()" title="Collapse sidebar">
+                ◀
+            </button>
+        </div>
+    </aside>
+
+    <!-- Sidebar overlay (mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+    <!-- Main content area -->
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Modal container -->
+    <div class="modal-overlay" id="modalOverlay" style="display:none">
+        <div class="modal-container" id="modalContainer">
+            <div class="modal-header">
+                <h2 id="modalTitle"></h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    {% block scripts_extra %}{% endblock %}
+</body>
+</html>
