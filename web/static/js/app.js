@@ -384,6 +384,15 @@ function renderKnowledgeGraph(data) {
             links.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
                  .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
             nodes.attr('transform', d => `translate(${d.x},${d.y})`);
+            g.selectAll('line.suggested-edge').each(function() {
+                const sid = parseInt(this.getAttribute('data-sid'));
+                const tid = parseInt(this.getAttribute('data-tid'));
+                const s = data.nodes.find(n => n.id === sid);
+                const t = data.nodes.find(n => n.id === tid);
+                if (s && t) {
+                    d3.select(this).attr('x1', s.x).attr('y1', s.y).attr('x2', t.x).attr('y2', t.y);
+                }
+            });
         });
 
     const filter = document.getElementById('graphCategoryFilter');
@@ -657,6 +666,9 @@ async function loadKnowledgeGraph() {
         const data = await apiService.getGraph(category);
         renderKnowledgeGraph(data);
     } catch (e) {}
+    if (state.suggestionEdges.length > 0) {
+        setTimeout(() => renderSuggestedEdges(state.suggestionEdges), 1000);
+    }
 }
 
 function resetGraphLayout() {
@@ -1368,7 +1380,151 @@ function renderReviewsWithPriority(items, priorityMap) {
 }
 
 // ================================================================
-// 14. Initialization
+// 14. AI Relationship Discovery (Knowledge Graph)
+// ================================================================
+
+async function discoverRelationships() {
+    const btn = document.getElementById('btnDiscoverRel');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = '分析中...';
+
+    try {
+        const graphData = await apiService.getGraph('');
+        if (!graphData || !graphData.nodes || graphData.nodes.length < 2) {
+            showToast('需要至少2个条目才能发现关联', 'warning');
+            return;
+        }
+
+        const filterVal = document.getElementById('graphCategoryFilter');
+        const result = await apiService.discoverRelationships({
+            scope: filterVal && filterVal.value ? 'category' : 'all',
+            category: filterVal ? filterVal.value : '',
+            limit: 30,
+        });
+
+        if (result.suggestions && result.suggestions.length > 0) {
+            state.suggestionEdges = result.suggestions;
+            document.getElementById('suggestionCount').textContent = result.suggestions.length;
+            document.getElementById('graphSuggestionControls').style.display = '';
+            // Reload graph first, then overlay suggested edges
+            loadKnowledgeGraph();
+            setTimeout(() => renderSuggestedEdges(result.suggestions), 1200);
+        } else {
+            showToast('未发现新的关联建议', 'success');
+            state.suggestionEdges = [];
+        }
+    } catch (e) {
+        // Error toast handled by api()
+    }
+    btn.disabled = false;
+    btn.textContent = '🤖 AI 发现关联';
+}
+
+function renderSuggestedEdges(suggestions) {
+    const container = document.getElementById('graphContainer');
+    const svg = container ? container.querySelector('svg') : null;
+    if (!svg) return;
+
+    const g = svg.querySelector('g');
+    if (!g) return;
+
+    // Remove old suggested edges
+    g.querySelectorAll('line.suggested-edge').forEach(l => l.remove());
+
+    const nodes = graphSimulation ? graphSimulation.nodes() : [];
+
+    suggestions.forEach((sug, idx) => {
+        const src = nodes.find(n => n.id === sug.source_id);
+        const tgt = nodes.find(n => n.id === sug.target_id);
+        if (!src || !tgt) return;
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('class', 'suggested-edge');
+        line.setAttribute('x1', src.x);
+        line.setAttribute('y1', src.y);
+        line.setAttribute('x2', tgt.x);
+        line.setAttribute('y2', tgt.y);
+        line.setAttribute('data-sid', sug.source_id);
+        line.setAttribute('data-tid', sug.target_id);
+        line.setAttribute('data-idx', idx);
+
+        line.addEventListener('mouseenter', (e) => {
+            const tooltip = document.createElement('div');
+            tooltip.className = 'edge-tooltip';
+            tooltip.id = 'edgeTooltip';
+            tooltip.innerHTML = `<strong>${escapeHtml(sug.type || 'related_to')}</strong><br>${escapeHtml(sug.reason || '')}<br><span style="font-size:10px;color:var(--text-tertiary);">强度: ${sug.strength || 3}/5 | 点击采纳</span>`;
+            document.body.appendChild(tooltip);
+            tooltip.style.left = (e.clientX + 10) + 'px';
+            tooltip.style.top = (e.clientY - 10) + 'px';
+        });
+
+        line.addEventListener('mouseleave', () => {
+            const tt = document.getElementById('edgeTooltip');
+            if (tt) tt.remove();
+        });
+
+        line.addEventListener('click', () => adoptSuggestion(idx));
+
+        g.appendChild(line);
+    });
+}
+
+async function adoptSuggestion(idx) {
+    const sug = state.suggestionEdges[idx];
+    if (!sug) return;
+    try {
+        await apiService.createRelationship({
+            source_id: sug.source_id,
+            target_id: sug.target_id,
+            relationship_type: sug.type || 'related_to',
+            strength: sug.strength || 3,
+        });
+        state.suggestionEdges.splice(idx, 1);
+        showToast('关联已添加', 'success');
+        document.getElementById('suggestionCount').textContent = state.suggestionEdges.length;
+        if (state.suggestionEdges.length === 0) {
+            clearSuggestions();
+            loadKnowledgeGraph();
+        } else {
+            loadKnowledgeGraph();
+            setTimeout(() => renderSuggestedEdges(state.suggestionEdges), 1200);
+        }
+    } catch (e) {}
+}
+
+async function adoptAllSuggestions() {
+    const count = state.suggestionEdges.length;
+    for (const sug of state.suggestionEdges) {
+        try {
+            await apiService.createRelationship({
+                source_id: sug.source_id,
+                target_id: sug.target_id,
+                relationship_type: sug.type || 'related_to',
+                strength: sug.strength || 3,
+            });
+        } catch (e) {}
+    }
+    clearSuggestions();
+    showToast(`已添加 ${count} 条关联`, 'success');
+    loadKnowledgeGraph();
+}
+
+function clearSuggestions() {
+    state.suggestionEdges = [];
+    const controls = document.getElementById('graphSuggestionControls');
+    if (controls) controls.style.display = 'none';
+    const svg = document.querySelector('#graphContainer svg');
+    if (svg) {
+        const g = svg.querySelector('g');
+        if (g) g.querySelectorAll('line.suggested-edge').forEach(l => l.remove());
+    }
+    const tt = document.getElementById('edgeTooltip');
+    if (tt) tt.remove();
+}
+
+// ================================================================
+// 15. Initialization
 // ================================================================
 async function init() {
     // Restore last panel from URL hash
