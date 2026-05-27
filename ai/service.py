@@ -288,17 +288,25 @@ class AIService:
     def _parse_json_response(self, result: dict) -> dict:
         """解析 AI 返回的 JSON（统一处理 code fence 和解析失败）"""
         try:
-            text = result['content'].strip()
-            if text.startswith('```'):
-                lines = text.split('\n')
-                text = '\n'.join(lines[1:])
-                if text.rstrip().endswith('```'):
-                    text = text.rstrip()[:-3]
-            data = json.loads(text)
+            text = result.get('content')
+            if not isinstance(text, str):
+                data = {'error': 'AI 返回非文本内容', 'raw': str(text)}
+            else:
+                text = text.strip()
+                if text.startswith('```'):
+                    lines = text.split('\n')
+                    text = '\n'.join(lines[1:])
+                    if text.rstrip().endswith('```'):
+                        text = text.rstrip()[:-3]
+                data = json.loads(text)
+                if isinstance(data, list):
+                    data = {'items': data}
         except (json.JSONDecodeError, KeyError):
-            data = {'error': 'AI 返回格式异常', 'raw': result['content']}
-        data['model'] = result['model']
-        data['provider'] = result['provider']
+            data = {'error': 'AI 返回格式异常', 'raw': result.get('content', '')}
+        if isinstance(data, list):
+            data = {'items': data}
+        data['model'] = result.get('model', 'unknown')
+        data['provider'] = result.get('provider', 'unknown')
         return data
 
     def discover_relationships(self, items: list,
@@ -309,17 +317,23 @@ class AIService:
             f'标签:{i.get("tag_names","")} 摘要:{i.get("summary","")[:100]}'
             for i in items
         ])
-        result = self.execute('discover_relationships', {
-            'items': items_text[:4000],
-        }, provider=provider, model=model)
+        try:
+            result = self.execute('discover_relationships', {
+                'items': items_text[:4000],
+            }, provider=provider, model=model)
+        except Exception as e:
+            return {
+                'suggestions': [], 'analyzed_count': len(items), 'suggestion_count': 0,
+                'model': model or '', 'provider': provider or '', 'error': str(e),
+            }
         parsed = self._parse_json_response(result)
-        # parsed might be a dict with 'error' key or the actual list from AI
         if isinstance(parsed, dict) and 'error' in parsed:
-            suggestions = []
-        elif isinstance(parsed, list):
-            suggestions = parsed
-        else:
-            suggestions = parsed.get('suggestions', []) if isinstance(parsed, dict) else []
+            return {
+                'suggestions': [], 'analyzed_count': len(items), 'suggestion_count': 0,
+                'model': result['model'], 'provider': result['provider'],
+            }
+        # _parse_json_response wraps bare arrays in {'items': ...}
+        suggestions = parsed.get('items', parsed) if isinstance(parsed.get('items'), list) else parsed.get('suggestions', [])
         if not isinstance(suggestions, list):
             suggestions = []
         return {
@@ -337,17 +351,23 @@ class AIService:
             f'- {i["title"]}: {i.get("summary", "")[:80]}'
             for i in items
         ])
-        result = self.execute('discover_gaps', {
-            'category': category,
-            'items': items_text[:3000],
-        }, provider=provider, model=model)
+        try:
+            result = self.execute('discover_gaps', {
+                'category': category,
+                'items': items_text[:3000],
+            }, provider=provider, model=model)
+        except Exception as e:
+            return {
+                'category': category, 'gaps': [], 'existing_count': len(items), 'gap_count': 0,
+                'model': model or '', 'provider': provider or '', 'error': str(e),
+            }
         parsed = self._parse_json_response(result)
         if isinstance(parsed, dict) and 'error' in parsed:
-            gaps = []
-        elif isinstance(parsed, list):
-            gaps = parsed
-        else:
-            gaps = parsed.get('gaps', []) if isinstance(parsed, dict) else []
+            return {
+                'category': category, 'gaps': [], 'existing_count': len(items), 'gap_count': 0,
+                'model': result['model'], 'provider': result['provider'],
+            }
+        gaps = parsed.get('items', parsed) if isinstance(parsed.get('items'), list) else parsed.get('gaps', [])
         if not isinstance(gaps, list):
             gaps = []
         return {
@@ -367,10 +387,17 @@ class AIService:
             f'摘要:{i.get("summary","")[:100]} 理解程度:{i.get("understanding_level",3)}/5'
             for i in items
         ])
-        result = self.execute('generate_learning_path', {
-            'goal': goal,
-            'items': items_text[:4000],
-        }, provider=provider, model=model)
+        try:
+            result = self.execute('generate_learning_path', {
+                'goal': goal,
+                'items': items_text[:4000],
+            }, provider=provider, model=model)
+        except Exception as e:
+            return {
+                'goal': goal, 'stages': [], 'missing_topics': [],
+                'total_estimated_hours': 0, 'model': model or '', 'provider': provider or '',
+                'error': str(e),
+            }
         parsed = self._parse_json_response(result)
         if isinstance(parsed, dict) and 'error' in parsed:
             return {
@@ -379,9 +406,9 @@ class AIService:
             }
         return {
             'goal': goal,
-            'stages': parsed.get('stages', []) if isinstance(parsed, dict) else [],
-            'missing_topics': parsed.get('missing_topics', []) if isinstance(parsed, dict) else [],
-            'total_estimated_hours': parsed.get('total_estimated_hours', 0) if isinstance(parsed, dict) else 0,
+            'stages': parsed.get('stages', []),
+            'missing_topics': parsed.get('missing_topics', []),
+            'total_estimated_hours': parsed.get('total_estimated_hours', 0),
             'model': result['model'],
             'provider': result['provider'],
         }
@@ -395,10 +422,16 @@ class AIService:
             f'ease:{i.get("ease_factor",2.5):.1f}'
             for i in review_items
         ])
-        result = self.execute('optimize_review_plan', {
-            'items': items_text[:4000],
-            'days': str(days),
-        }, provider=provider, model=model)
+        try:
+            result = self.execute('optimize_review_plan', {
+                'items': items_text[:4000],
+                'days': str(days),
+            }, provider=provider, model=model)
+        except Exception as e:
+            return {
+                'daily_plan': [], 'max_daily': 8, 'strategy_notes': '',
+                'model': model or '', 'provider': provider or '', 'error': str(e),
+            }
         parsed = self._parse_json_response(result)
         if isinstance(parsed, dict) and 'error' in parsed:
             return {
@@ -406,9 +439,9 @@ class AIService:
                 'model': result['model'], 'provider': result['provider'],
             }
         return {
-            'daily_plan': parsed.get('daily_plan', []) if isinstance(parsed, dict) else [],
-            'max_daily': parsed.get('max_daily', 8) if isinstance(parsed, dict) else 8,
-            'strategy_notes': parsed.get('strategy_notes', '') if isinstance(parsed, dict) else '',
+            'daily_plan': parsed.get('daily_plan', []),
+            'max_daily': parsed.get('max_daily', 8),
+            'strategy_notes': parsed.get('strategy_notes', ''),
             'model': result['model'],
             'provider': result['provider'],
         }
