@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<!-- Stats Bar -->
+<div class="stats-bar" id="statsBar">
+    <div class="stat-card">
+        <div class="stat-value" id="statTotal">0</div>
+        <div class="stat-label">知识条目</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statTodayNew">0</div>
+        <div class="stat-label">今日新增</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statReviews">0</div>
+        <div class="stat-label">待复习</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statCategories">0</div>
+        <div class="stat-label">分类</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="statTags">0</div>
+        <div class="stat-label">标签</div>
+    </div>
+</div>
+
+<!-- ==================== Knowledge Panel ==================== -->
+<section class="panel active" id="panel-knowledge">
+    <div class="panel-header">
+        <h2 class="panel-title">知识管理</h2>
+        <p class="panel-desc">搜索、添加和管理你的知识条目</p>
+    </div>
+
+    <!-- Search bar -->
+    <div class="search-box">
+        <input type="text" class="search-input" id="searchInput"
+               placeholder="搜索知识库... (支持多关键词用逗号分隔)"
+               onkeydown="if(event.key==='Enter')searchItems()">
+        <button class="btn btn-primary" onclick="searchItems()">搜索</button>
+        <button class="btn btn-outline" onclick="showAllItems()">全部</button>
+        <button class="btn btn-outline" onclick="showCategories()">分类</button>
+        <button class="btn btn-outline" onclick="showTags()">标签</button>
+    </div>
+
+    <!-- AI-assisted entry (collapsible) -->
+    <details class="ai-extract-details" id="aiExtractDetails">
+        <summary>🤖 AI辅助录入 <span style="font-weight:400;font-size:12px;color:var(--text-tertiary);">— 从URL/文本/文件智能提取</span></summary>
+        <div>
+            <!-- Quick mode toggle -->
+            <div class="toggle-row" style="margin-bottom:12px;">
+                <span>快速模式</span>
+                <div class="toggle-switch" id="quickModeToggle" onclick="toggleQuickMode()"></div>
+                <span style="font-size:11px;color:var(--text-tertiary);">开启后直接保存，跳过预览</span>
+            </div>
+
+            <!-- Tab bar -->
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="url" onclick="switchExtractTab('url')">🔗 URL</button>
+                <button class="tab-btn" data-tab="text" onclick="switchExtractTab('text')">📝 文本</button>
+                <button class="tab-btn" data-tab="file" onclick="switchExtractTab('file')">📄 文件</button>
+            </div>
+
+            <!-- URL input -->
+            <div class="ai-input-row" id="extractUrlRow">
+                <input type="url" class="form-input" id="extractUrl" placeholder="粘贴网页链接，AI 自动提取知识条目...">
+                <button class="btn btn-primary" onclick="extractFromURL()">提取</button>
+            </div>
+
+            <!-- Text input -->
+            <div class="ai-input-row" id="extractTextRow" style="display:none;">
+                <textarea class="form-textarea" id="extractText" placeholder="粘贴原始材料，AI 自动整理为结构化知识条目..." style="min-height:120px;"></textarea>
+                <button class="btn btn-primary" onclick="extractFromText()">提取</button>
+            </div>
+
+            <!-- File selector -->
+            <div class="file-selector" id="extractFileRow" style="display:none;">
+                <span style="font-size:13px;color:var(--text-secondary);">选择已上传文件：</span>
+                <select class="form-select" id="extractFileSelect">
+                    <option value="">-- 选择文件 --</option>
+                </select>
+                <button class="btn btn-primary" onclick="extractFromFile()">提取</button>
+            </div>
+
+            <!-- Extract loading -->
+            <div id="extractLoading" style="display:none;text-align:center;padding:16px;">
+                <div class="spinner"></div>
+                <p style="color:var(--text-tertiary);margin-top:8px;">AI 正在分析提取...</p>
+            </div>
+
+            <!-- Preview form (hidden until extraction complete) -->
+            <div class="ai-preview" id="aiPreview" style="display:none;">
+                <div class="ai-preview-header">
+                    <h4>提取结果预览</h4>
+                    <span style="font-size:11px;color:var(--text-tertiary);" id="extractModel"></span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">标题</label>
+                    <input type="text" class="form-input" id="aiPreviewTitle">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">内容</label>
+                    <textarea class="form-textarea" id="aiPreviewContent" style="min-height:120px;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">摘要</label>
+                    <input type="text" class="form-input" id="aiPreviewSummary">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">标签</label>
+                        <div class="ai-preview-tags" id="aiPreviewTags"></div>
+                        <div class="tag-add-row" style="margin-top:6px;">
+                            <input type="text" id="aiPreviewNewTag" placeholder="+ 添加标签" onkeydown="if(event.key==='Enter'){addPreviewTag();event.preventDefault();}">
+                            <button class="btn btn-outline btn-sm" onclick="addPreviewTag()">+</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">分类</label>
+                        <input type="text" class="form-input" id="aiPreviewCategory" placeholder="例如: 物理">
+                    </div>
+                </div>
+                <div class="ai-preview-buttons">
+                    <button class="btn btn-primary" onclick="confirmAIExtract()">确认添加</button>
+                    <button class="btn btn-outline" id="aiRetryBtn" onclick="retryAIExtract()">重新提取</button>
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <!-- Add form (collapsible) -->
+    <details class="form-panel" id="addFormPanel">
+        <summary class="form-panel-toggle">+ 添加新知识</summary>
+        <div class="form-group">
+            <label class="form-label" for="newTitle">标题</label>
+            <input type="text" class="form-input" id="newTitle" placeholder="输入标题...">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="newContent">
+                内容（支持 Markdown 和 LaTeX）
+                <span style="float:right;font-weight:400;">
+                    <button class="btn btn-outline btn-sm" onclick="uploadImageToInsert('newContent')" title="上传图片">🖼 图片</button>
+                    <button class="btn btn-outline btn-sm" onclick="uploadFileToInsert('newContent')" title="上传文件">📎 文件</button>
+                </span>
+            </label>
+            <textarea class="form-textarea" id="newContent" placeholder="输入内容...&#10;&#10;LaTeX: $E=mc^2$ 或 $$\int_0^\infty f(x)dx$$"></textarea>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label" for="newTags">标签（逗号分隔）</label>
+                <input type="text" class="form-input" id="newTags" placeholder="例如: 物理, 量子力学">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="newCategory">分类</label>
+                <input type="text" class="form-input" id="newCategory" placeholder="例如: 物理" list="categorySuggestions">
+                <datalist id="categorySuggestions"></datalist>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label" for="newImportance">重要程度</label>
+                <select class="form-select" id="newImportance">
+                    <option value="1">1 - 不重要</option>
+                    <option value="2">2 - 一般</option>
+                    <option value="3" selected>3 - 重要</option>
+                    <option value="4">4 - 很重要</option>
+                    <option value="5">5 - 非常重要</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="newUnderstanding">理解程度</label>
+                <select class="form-select" id="newUnderstanding">
+                    <option value="1">1 - 完全不懂</option>
+                    <option value="2">2 - 初步了解</option>
+                    <option value="3" selected>3 - 基本理解</option>
+                    <option value="4">4 - 理解较好</option>
+                    <option value="5">5 - 完全掌握</option>
+                </select>
+            </div>
+        </div>
+        <button class="btn btn-primary btn-lg" onclick="addNewItem()">保存知识</button>
+    </details>
+
+    <!-- AI gap analysis results -->
+    <div id="gapAnalysis" style="display:none;margin-bottom:16px;"></div>
+
+    <!-- Search results area -->
+    <div id="searchResults">
+        <div class="empty-state">
+            <div class="empty-state-icon">🔍</div>
+            <p>输入关键词搜索，或点击"全部"浏览知识库</p>
+        </div>
+    </div>
+</section>
+
+<!-- ==================== Review Panel ==================== -->
+<section class="panel" id="panel-review">
+    <div class="panel-header">
+        <h2 class="panel-title">复习</h2>
+        <p class="panel-desc">今日待复习的知识条目，基于间隔重复算法</p>
+    </div>
+    <!-- Review sub-tabs -->
+    <div class="review-tab-bar">
+        <button class="review-tab-btn active" data-review-tab="review-plan" onclick="switchReviewTab('review-plan')">复习计划</button>
+        <button class="review-tab-btn" data-review-tab="learning-path" onclick="switchReviewTab('learning-path')">学习路径</button>
+    </div>
+
+    <!-- Review Plan sub-panel -->
+    <div class="review-sub-panel" id="reviewPlanPanel">
+        <div class="review-ai-controls">
+            <span>排序方式:</span>
+            <button class="btn btn-outline btn-sm" id="btnSortDefault" onclick="switchReviewSort('default')">按日期</button>
+            <button class="btn btn-outline btn-sm" id="btnSortAI" onclick="switchReviewSort('ai')">🤖 AI 智能排序</button>
+        </div>
+        <div class="strategy-notes" id="strategyNotes" style="display:none;"></div>
+        <div id="reviewContent">
+            <div class="loading"><div class="spinner"></div>加载中...</div>
+        </div>
+    </div>
+
+    <!-- Learning Path sub-panel -->
+    <div class="review-sub-panel" id="learningPathPanel" style="display:none;">
+        <div class="ai-input-row" style="margin-bottom:12px;">
+            <input type="text" class="form-input" id="learningGoal" placeholder="输入学习目标，如：掌握机器学习基础"
+                   onkeydown="if(event.key==='Enter')generateLearningPath()">
+            <button class="btn btn-primary" onclick="generateLearningPath()">生成路径</button>
+        </div>
+        <div id="learningPathContent">
+            <div class="empty-state">
+                <div class="empty-state-icon">🗺</div>
+                <p>输入一个学习目标，AI 将基于知识库为你生成结构化学习路径</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ==================== Knowledge Graph Panel ==================== -->
+<section class="panel" id="panel-graph">
+    <div class="panel-header">
+        <h2 class="panel-title">知识图谱</h2>
+        <p class="panel-desc">可视化知识之间的关联关系</p>
+    </div>
+    <div class="graph-controls">
+        <button class="btn btn-outline btn-sm" onclick="loadKnowledgeGraph()">刷新</button>
+        <button class="btn btn-outline btn-sm" onclick="resetGraphLayout()">重置布局</button>
+        <button class="btn btn-outline btn-sm" onclick="focusOnImportantNodes()">聚焦重点</button>
+        <select class="form-select" id="graphCategoryFilter" onchange="filterGraphByCategory()" style="width:auto;padding:4px 8px;">
+            <option value="">全部分类</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="discoverRelationships()" id="btnDiscoverRel">
+            🤖 AI 发现关联
+        </button>
+    </div>
+    <div class="graph-container" id="graphContainer">
+        <div class="loading"><div class="spinner"></div>加载中...</div>
+    </div>
+    <div class="graph-suggestion-controls" id="graphSuggestionControls" style="display:none;">
+        <span>AI 发现了 <span class="suggestion-count" id="suggestionCount">0</span> 个潜在关联</span>
+        <button class="btn btn-primary btn-sm" onclick="adoptAllSuggestions()">全部采纳</button>
+        <button class="btn btn-outline btn-sm" onclick="clearSuggestions()">忽略全部</button>
+    </div>
+</section>
+
+<!-- ==================== AI Assistant Panel ==================== -->
+<section class="panel" id="panel-ai">
+    <div class="panel-header">
+        <h2 class="panel-title">AI 助手</h2>
+        <p class="panel-desc">基于知识库内容的智能对话、分析和写作辅助</p>
+    </div>
+    <div class="chat-container">
+        <div class="chat-messages" id="chatMessages">
+            <div class="chat-message assistant">
+                你好！我是 AI 助手。你可以：<br>
+                • 直接提问，我会基于知识库回答<br>
+                • 选择一个知识条目后点击"分析"<br>
+                • 选中知识条目后生成测试题<br>
+                • 使用"改进写作"优化文本
+            </div>
+        </div>
+        <div class="chat-input-row">
+            <input type="text" class="chat-input" id="chatInput"
+                   placeholder="输入问题..."
+                   onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendChatMessage();event.preventDefault()}">
+            <button class="btn btn-primary" onclick="sendChatMessage()">发送</button>
+            <button class="btn btn-outline btn-sm" onclick="clearChatHistory()">清空</button>
+        </div>
+    </div>
+</section>
+
+<!-- ==================== Upload Management Panel ==================== -->
+<section class="panel" id="panel-upload">
+    <div class="panel-header">
+        <h2 class="panel-title">上传管理</h2>
+        <p class="panel-desc">上传文件或导入文本作为知识条目</p>
+    </div>
+    <div class="upload-zone" id="uploadZone"
+         ondragover="handleDragOver(event)" ondragleave="this.classList.remove('dragover')"
+         ondrop="handleFileDrop(event)" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-zone-icon">📁</div>
+        <p>拖拽文件到此处，或点击选择文件</p>
+        <p class="form-hint">支持 PDF, DOCX, TXT, MD, TEX 等格式</p>
+    </div>
+    <input type="file" id="fileInput" multiple style="display:none" onchange="handleFileUpload()">
+    <div id="uploadProgress" style="margin-top:12px;"></div>
+
+    <h3 style="margin-top:24px;margin-bottom:12px;">导入文本文件</h3>
+    <div class="upload-zone" onclick="document.getElementById('textFileInput').click()">
+        <div class="upload-zone-icon">📄</div>
+        <p>导入 .txt .md .tex .py 等文本文件为知识条目</p>
+    </div>
+    <input type="file" id="textFileInput" multiple style="display:none"
+           accept=".md,.txt,.tex,.rst,.vim,.csv,.py,.js,.java,.cpp,.c,.html,.css,.json,.yaml,.yml,.xml"
+           onchange="importFromTextFiles()">
+    <div id="textImportProgress" style="margin-top:12px;"></div>
+</section>
+
+<!-- Hidden file inputs for inline upload -->
+<input type="file" id="inlineImageInput" accept="image/*" style="display:none" onchange="handleInlineImageUpload(this)">
+<input type="file" id="inlineFileInput" style="display:none" onchange="handleInlineFileUpload(this)">
+
+{% endblock %}
