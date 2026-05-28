@@ -55,6 +55,9 @@ defaults:
   discover_relationships:
     provider: ollama
     model: qwen3:8b
+  suggest_related:
+    provider: ollama
+    model: qwen3:8b
   discover_gaps:
     provider: ollama
     model: qwen3:8b

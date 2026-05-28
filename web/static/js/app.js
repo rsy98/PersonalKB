@@ -340,6 +340,7 @@ function renderItemDetail(item) {
                 <div style="display:flex;gap:4px;">
                     <button class="btn btn-sm btn-outline" onclick="showAddRelationship()">+ 添加关联</button>
                     <button class="btn btn-sm btn-outline" id="btnAISuggestRel" onclick="aiSuggestRelated(${item.id})" style="color:var(--accent);">🤖 AI 建议关联</button>
+                    <span id="detailSuggestRelSelector" style="display:inline-block;vertical-align:middle;"></span>
                 </div>
             </div>
             <div id="aiSuggestResults" style="margin-bottom:8px;"></div>
@@ -1201,6 +1202,7 @@ function buildDetailModelSelectors() {
     buildModelSelector('detailQuestionsSelector', 'generate_questions');
     buildModelSelector('detailImproveSelector', 'improve_writing');
     buildModelSelector('detailChatSelector', 'chat');
+    buildModelSelector('detailSuggestRelSelector', 'suggest_related');
 }
 
 // ================================================================
@@ -2065,7 +2067,7 @@ async function aiSuggestRelated(itemId) {
     resultDiv.innerHTML = '<div style="padding:8px;font-size:12px;color:var(--text-tertiary);">AI 正在分析知识库...</div>';
     if (btn) { btn.disabled = true; btn.textContent = '分析中...'; }
     try {
-        const opts = getAIOptions('discover_relationships');
+        const opts = getAIOptions('suggest_related');
         const resp = await apiService.suggestRelated(itemId, opts.provider, opts.model);
         const suggestions = resp.suggestions || [];
         if (suggestions.length === 0) {
