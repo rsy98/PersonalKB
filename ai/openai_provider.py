@@ -1,5 +1,5 @@
 from openai import OpenAI
-from ai.provider import BaseProvider, ChatMessage, ChatResponse
+from ai.provider import BaseProvider, ChatMessage, ChatResponse, ContentBlock
 
 
 class OpenAIProvider(BaseProvider):
@@ -15,9 +15,22 @@ class OpenAIProvider(BaseProvider):
         except Exception:
             self._client = None
 
+    def _format_message(self, m: ChatMessage) -> dict:
+        """Format a ChatMessage for the OpenAI/DeepSeek API."""
+        if isinstance(m.content, str):
+            return {'role': m.role, 'content': m.content}
+        # Multimodal: list[ContentBlock]
+        content_list = []
+        for block in m.content:
+            if block.type == 'text':
+                content_list.append({'type': 'text', 'text': block.text})
+            elif block.type == 'image_url':
+                content_list.append({'type': 'image_url', 'image_url': block.image_url})
+        return {'role': m.role, 'content': content_list}
+
     def chat(self, messages: list[ChatMessage], model: str,
              temperature: float = 0.7, max_tokens: int = 4096, **kwargs) -> ChatResponse:
-        formatted = [{'role': m.role, 'content': m.content} for m in messages]
+        formatted = [self._format_message(m) for m in messages]
         completion = self._client.chat.completions.create(
             model=model,
             messages=formatted,

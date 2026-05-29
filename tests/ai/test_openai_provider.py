@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from ai.provider import ChatMessage
+from ai.provider import ContentBlock, ChatMessage
 from ai.openai_provider import OpenAIProvider
 
 
@@ -43,3 +43,33 @@ class TestOpenAIProvider:
         MockOpenAI.side_effect = Exception('Bad key')
         provider = OpenAIProvider(api_key='sk-test')
         assert provider.is_available() is False
+
+    @patch('ai.openai_provider.OpenAI')
+    def test_chat_sends_multimodal_messages(self, MockOpenAI):
+        mock_client = MagicMock()
+        mock_choice = MagicMock()
+        mock_choice.message.content = 'I see an image'
+        mock_completion = MagicMock()
+        mock_completion.choices = [mock_choice]
+        mock_completion.model = 'gpt-4o'
+        mock_completion.usage = MagicMock(prompt_tokens=30, completion_tokens=15)
+        mock_client.chat.completions.create.return_value = mock_completion
+        MockOpenAI.return_value = mock_client
+
+        provider = OpenAIProvider(api_key='sk-test')
+        messages = [
+            ChatMessage.multimodal("user", [
+                ContentBlock(type="text", text="Describe this image"),
+                ContentBlock(type="image_url", image_url={"url": "data:image/png;base64,abc123"}),
+            ])
+        ]
+        resp = provider.chat(messages, model='gpt-4o')
+
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        sent_messages = call_kwargs['messages']
+        assert len(sent_messages) == 1
+        assert sent_messages[0]['role'] == 'user'
+        assert isinstance(sent_messages[0]['content'], list)
+        assert sent_messages[0]['content'][0] == {'type': 'text', 'text': 'Describe this image'}
+        assert sent_messages[0]['content'][1] == {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,abc123'}}
+        assert resp.content == 'I see an image'
