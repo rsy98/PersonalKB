@@ -118,6 +118,26 @@ def list_uploaded_files() -> list[dict]:
     return files
 
 
+def _build_user_blocks(question: str, context: str,
+                       attachments: list[dict]) -> list:
+    """Build user ContentBlocks for chat, merging text context and attachments."""
+    blocks = [ContentBlock(type="text", text=context + question)]
+    for att in attachments:
+        if att.get('type') == 'image':
+            blocks.append(ContentBlock(
+                type="image_url",
+                image_url={"url": att.get('base64', '')},
+            ))
+        elif att.get('type') == 'file':
+            text = att.get('text', '')
+            if text:
+                blocks.append(ContentBlock(
+                    type="text",
+                    text=f"\n[文件: {att.get('filename', '')}]\n{text}",
+                ))
+    return blocks
+
+
 @ai_bp.route('/api/ai/upload_attachment', methods=['POST'])
 def api_ai_upload_attachment():
     """Upload a file or image for AI chat attachment.
@@ -287,22 +307,6 @@ def api_ai_chat():
 
         ai_service = get_ai_service()
 
-        # Build the user message (multimodal if attachments present)
-        user_blocks = [ContentBlock(type="text", text=question)]
-        for att in attachments:
-            if att.get('type') == 'image':
-                user_blocks.append(ContentBlock(
-                    type="image_url",
-                    image_url={"url": att.get('base64', '')},
-                ))
-            elif att.get('type') == 'file':
-                text = att.get('text', '')
-                if text:
-                    user_blocks.append(ContentBlock(
-                        type="text",
-                        text=f"\n[文件: {att.get('filename', '')}]\n{text}",
-                    ))
-
         # Build context
         context = ''
         if chat_history:
@@ -317,9 +321,9 @@ def api_ai_chat():
             for item in context_items[:3]
         ])
 
-        # Prepend context to the first text block
-        if context.strip():
-            user_blocks[0].text = context + '\n\n用户问题：' + question
+        # Build multimodal user message
+        question_prefix = (context + '\n\n用户问题：') if context.strip() else ''
+        user_blocks = _build_user_blocks(question, question_prefix, attachments)
 
         # Resolve provider/model and call directly
         p_name, m_name = ai_service._resolve('chat', provider, model)
@@ -716,20 +720,8 @@ def api_ai_rag_chat():
         )
 
         # Build multimodal user message
-        user_blocks = [ContentBlock(type="text", text=chat_context + context + f'\n用户问题：{question}')]
-        for att in attachments:
-            if att.get('type') == 'image':
-                user_blocks.append(ContentBlock(
-                    type="image_url",
-                    image_url={"url": att.get('base64', '')},
-                ))
-            elif att.get('type') == 'file':
-                text = att.get('text', '')
-                if text:
-                    user_blocks.append(ContentBlock(
-                        type="text",
-                        text=f"\n[文件: {att.get('filename', '')}]\n{text}",
-                    ))
+        question_prefix = chat_context + context + '\n用户问题：'
+        user_blocks = _build_user_blocks(question, question_prefix, attachments)
 
         p_name, m_name = ai_service._resolve('chat', provider, model)
         prov = ai_service._get_provider(p_name)

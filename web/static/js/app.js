@@ -1270,7 +1270,22 @@ async function sendChatMessage() {
         }
 
         messages.innerHTML += `<div class="chat-message assistant">${html}</div>`;
-        state.chatHistory.push({ role: 'user', content: question }, { role: 'assistant', content: answer });
+        // Include attachment context in chat history for follow-up questions
+        let userContent = question;
+        if (attachments.length > 0) {
+            const parts = [];
+            for (const att of attachments) {
+                if (att.type === 'file' && att.text) {
+                    parts.push('[文件: ' + att.filename + ']\n' + att.text.substring(0, 2000));
+                } else if (att.type === 'image') {
+                    parts.push('[图片: ' + att.filename + ']');
+                }
+            }
+            if (parts.length) {
+                userContent = question + '\n\n' + parts.join('\n\n');
+            }
+        }
+        state.chatHistory.push({ role: 'user', content: userContent }, { role: 'assistant', content: answer });
     } catch (e) {
         document.getElementById('chatLoading')?.remove();
         messages.innerHTML += `<div class="chat-message assistant" style="color:var(--danger);">错误: ${escapeHtml(e.message)}</div>`;
