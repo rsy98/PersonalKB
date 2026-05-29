@@ -1,5 +1,5 @@
 import pytest
-from ai.provider import BaseProvider, ChatMessage, ChatResponse, create_provider
+from ai.provider import BaseProvider, ChatMessage, ChatResponse, ContentBlock, create_provider
 
 
 class FakeProvider(BaseProvider):
@@ -58,3 +58,46 @@ def test_create_provider_returns_provider_instance():
 def test_create_provider_can_accept_config():
     provider = FakeProvider(config={"models": ["m1", "m2"]})
     assert provider.list_models() == ["m1", "m2"]
+
+
+class TestContentBlock:
+    def test_create_text_block(self):
+        block = ContentBlock(type="text", text="hello")
+        assert block.type == "text"
+        assert block.text == "hello"
+        assert block.image_url is None
+
+    def test_create_image_block(self):
+        block = ContentBlock(type="image_url", image_url={"url": "data:image/png;base64,abc"})
+        assert block.type == "image_url"
+        assert block.text == ""
+        assert block.image_url == {"url": "data:image/png;base64,abc"}
+
+
+class TestChatMessageMultimodal:
+    def test_create_pure_text_message(self):
+        msg = ChatMessage(role="user", content="hello")
+        assert msg.role == "user"
+        assert msg.content == "hello"
+
+    def test_text_factory_method(self):
+        msg = ChatMessage.text("user", "hello")
+        assert msg.role == "user"
+        assert msg.content == "hello"
+
+    def test_multimodal_factory_method(self):
+        blocks = [
+            ContentBlock(type="text", text="analyze this image"),
+            ContentBlock(type="image_url", image_url={"url": "data:image/png;base64,abc"}),
+        ]
+        msg = ChatMessage.multimodal("user", blocks)
+        assert msg.role == "user"
+        assert isinstance(msg.content, list)
+        assert len(msg.content) == 2
+        assert msg.content[0].type == "text"
+        assert msg.content[0].text == "analyze this image"
+        assert msg.content[1].type == "image_url"
+
+    def test_content_is_str_by_default(self):
+        msg = ChatMessage(role="assistant", content="response")
+        assert isinstance(msg.content, str)

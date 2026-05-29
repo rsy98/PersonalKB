@@ -1,11 +1,30 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Union
+
+
+@dataclass
+class ContentBlock:
+    """A multimodal content block - text or image."""
+    type: str
+    text: str = ""
+    image_url: dict = None
 
 
 @dataclass
 class ChatMessage:
-    role: str      # system / user / assistant
-    content: str
+    role: str
+    content: Union[str, list[ContentBlock]]
+
+    @staticmethod
+    def text(role: str, text: str) -> "ChatMessage":
+        """Create a plain-text message."""
+        return ChatMessage(role=role, content=text)
+
+    @staticmethod
+    def multimodal(role: str, blocks: list[ContentBlock]) -> "ChatMessage":
+        """Create a multimodal message from ContentBlocks."""
+        return ChatMessage(role=role, content=blocks)
 
 
 @dataclass
