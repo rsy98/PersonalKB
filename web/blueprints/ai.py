@@ -6,6 +6,8 @@ import re
 import os
 import json
 
+from ai.file_extractor import FileExtractor
+
 ai_bp = Blueprint('ai', __name__)
 
 _ai_service = None
@@ -112,6 +114,74 @@ def list_uploaded_files() -> list[dict]:
             })
     files.sort(key=lambda f: f['modified'], reverse=True)
     return files
+
+
+@ai_bp.route('/api/ai/upload_attachment', methods=['POST'])
+def api_ai_upload_attachment():
+    """Upload a file or image for AI chat attachment.
+    Returns processed data: base64 for images, extracted text for files."""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': '没有选择文件'}), 400
+
+        file = request.files['file']
+        if not file or file.filename == '':
+            return jsonify({'error': '没有选择文件'}), 400
+
+        filename = file.filename
+        ext = os.path.splitext(filename)[1].lower()
+
+        if FileExtractor.is_image(filename):
+            import base64
+            file_data = file.read()
+            if len(file_data) > 10 * 1024 * 1024:
+                return jsonify({'error': '图片文件过大，最大10MB'}), 400
+            mime_type = {
+                '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                '.gif': 'image/gif', '.bmp': 'image/bmp', '.webp': 'image/webp',
+            }.get(ext, 'image/png')
+            b64 = base64.b64encode(file_data).decode('ascii')
+            data_url = f'data:{mime_type};base64,{b64}'
+
+            static_dir = os.path.join(current_app.static_folder, 'images')
+            os.makedirs(static_dir, exist_ok=True)
+            save_path = os.path.join(static_dir, filename)
+            with open(save_path, 'wb') as f:
+                f.write(file_data)
+
+            return jsonify({
+                'type': 'image',
+                'filename': filename,
+                'base64': data_url,
+                'mime_type': mime_type,
+            })
+
+        elif FileExtractor.is_supported(filename):
+            file_data = file.read()
+            if len(file_data) > 10 * 1024 * 1024:
+                return jsonify({'error': '文件过大，最大10MB'}), 400
+
+            static_dir = os.path.join(current_app.static_folder, 'files')
+            os.makedirs(static_dir, exist_ok=True)
+            save_path = os.path.join(static_dir, filename)
+            with open(save_path, 'wb') as f:
+                f.write(file_data)
+
+            text = FileExtractor.extract(save_path)
+            if text is None:
+                return jsonify({'error': f'无法从此文件提取文本: {filename}'}), 400
+
+            return jsonify({
+                'type': 'file',
+                'filename': filename,
+                'text': text[:8000],
+            })
+
+        else:
+            return jsonify({'error': f'不支持的文件类型: {ext}'}), 400
+
+    except Exception as e:
+        return jsonify({'error': f'上传处理失败: {str(e)}'}), 500
 
 
 @ai_bp.route('/api/ai_recommendations/<int:item_id>')
