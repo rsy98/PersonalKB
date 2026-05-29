@@ -132,9 +132,9 @@ const apiService = {
     },
     generateEmbeddings: () => api('/api/ai/embeddings/generate', { method: 'POST' }),
     semanticSearch: (q, limit) => api(`/api/ai/semantic_search?q=${encodeURIComponent(q)}&limit=${limit || 10}`),
-    ragChat: (question, chatHistory, provider, model) => api('/api/ai/rag_chat', {
+    ragChat: (question, chatHistory, provider, model, attachments) => api('/api/ai/rag_chat', {
         method: 'POST',
-        body: JSON.stringify({ question, chat_history: chatHistory, provider, model }),
+        body: JSON.stringify({ question, chat_history: chatHistory, provider, model, attachments }),
     }),
     importFile: (formData) => {
         return fetch(API_BASE + '/api/import', { method: 'POST', body: formData }).then(r => r.json());
@@ -1211,11 +1211,24 @@ function buildDetailModelSelectors() {
 async function sendChatMessage() {
     const input = document.getElementById('chatInput');
     const question = input.value.trim();
-    if (!question) return;
+    if (!question && state.attachments.length === 0) return;
     input.value = '';
 
+    const attachments = [...state.attachments];
+    state.attachments = [];
+    renderChatAttachments();
+
     const messages = document.getElementById('chatMessages');
-    messages.innerHTML += `<div class="chat-message user">${escapeHtml(question)}</div>`;
+    let userMsgHtml = escapeHtml(question);
+    if (attachments.length > 0) {
+        userMsgHtml += '<div style="margin-top:4px;font-size:11px;color:var(--text-tertiary);">';
+        userMsgHtml += attachments.map(a => {
+            const icon = a.type === 'image' ? '🖼' : '📎';
+            return icon + ' ' + escapeHtml(a.filename || 'attachment');
+        }).join(' ');
+        userMsgHtml += '</div>';
+    }
+    messages.innerHTML += `<div class="chat-message user">${userMsgHtml}</div>`;
     const modeLabel = state.ragMode ? 'RAG 检索中...' : '思考中...';
     messages.innerHTML += `<div class="chat-message assistant" id="chatLoading"><div class="spinner"></div> ${modeLabel}</div>`;
     messages.scrollTop = messages.scrollHeight;
@@ -1224,7 +1237,7 @@ async function sendChatMessage() {
         const opts = getAIOptions('chat');
         let result;
         if (state.ragMode) {
-            result = await apiService.ragChat(question, state.chatHistory, opts.provider, opts.model);
+            result = await apiService.ragChat(question, state.chatHistory, opts.provider, opts.model, attachments);
         } else {
             result = await apiService.aiChat({
                 question,
@@ -1232,6 +1245,7 @@ async function sendChatMessage() {
                 chat_history: state.chatHistory,
                 provider: opts.provider,
                 model: opts.model,
+                attachments: attachments,
             });
         }
         document.getElementById('chatLoading')?.remove();
@@ -1243,7 +1257,6 @@ async function sendChatMessage() {
         }
         html += `<div style="white-space:pre-wrap;">${simpleMarkdownRender(answer)}</div>`;
 
-        // Show RAG sources
         if (result.sources && result.sources.length > 0) {
             html += `<details style="margin-top:8px;"><summary style="cursor:pointer;color:var(--accent);font-size:11px;">📚 参考来源 (${result.sources.length})</summary>`;
             html += result.sources.map((s, i) => `
@@ -1267,9 +1280,96 @@ async function sendChatMessage() {
 
 function clearChatHistory() {
     state.chatHistory = [];
+    state.attachments = [];
+    renderChatAttachments();
     document.getElementById('chatMessages').innerHTML = `
         <div class="chat-message assistant">聊天历史已清空。有什么我可以帮你的？</div>
     `;
+}
+
+// ── Chat Attachment Handling ──
+
+state.attachments = [];
+
+function removeChatAttachment(index) {
+    state.attachments.splice(index, 1);
+    renderChatAttachments();
+}
+
+function renderChatAttachments() {
+    const container = document.getElementById('chatAttachmentPreviews');
+    if (!container) return;
+    container.innerHTML = state.attachments.map((att, i) => {
+        const icon = att.type === 'image' ? '🖼' : '📄';
+        const name = escapeHtml(att.filename || 'attachment');
+        return `<span style="display:inline-flex;align-items:center;gap:4px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:12px;">
+            ${icon} ${name}
+            <span onclick="removeChatAttachment(${i})" style="cursor:pointer;color:var(--text-tertiary);margin-left:2px;">×</span>
+        </span>`;
+    }).join('');
+}
+
+async function handleChatImageAttach(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('图片文件过大，最大10MB', 'error');
+        input.value = '';
+        return;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    showToast('处理图片中...', 'success');
+    try {
+        const resp = await fetch('/api/ai/upload_attachment', { method: 'POST', body: formData });
+        const result = await resp.json();
+        if (result.error) {
+            showToast(result.error, 'error');
+        } else {
+            state.attachments.push({
+                type: result.type,
+                filename: result.filename,
+                base64: result.base64,
+                mime_type: result.mime_type,
+            });
+            renderChatAttachments();
+            showToast(`图片已添加: ${result.filename}`, 'success');
+        }
+    } catch (e) {
+        showToast('上传失败: ' + e.message, 'error');
+    }
+    input.value = '';
+}
+
+async function handleChatFileAttach(input) {
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+    if (file.size > 10 * 1024 * 1024) {
+        showToast('文件过大，最大10MB', 'error');
+        input.value = '';
+        return;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    showToast('处理文件中...', 'success');
+    try {
+        const resp = await fetch('/api/ai/upload_attachment', { method: 'POST', body: formData });
+        const result = await resp.json();
+        if (result.error) {
+            showToast(result.error, 'error');
+        } else {
+            state.attachments.push({
+                type: result.type,
+                filename: result.filename,
+                text: result.text,
+            });
+            renderChatAttachments();
+            showToast(`文件已添加: ${result.filename}`, 'success');
+        }
+    } catch (e) {
+        showToast('上传失败: ' + e.message, 'error');
+    }
+    input.value = '';
 }
 
 // ── Per-item AI chat ──
