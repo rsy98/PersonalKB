@@ -7,6 +7,8 @@ import os
 import json
 
 from ai.file_extractor import FileExtractor
+from ai.provider import ChatMessage, ContentBlock
+from ai.service import PROMPTS
 
 ai_bp = Blueprint('ai', __name__)
 
@@ -265,39 +267,77 @@ def api_ai_chat():
         data = request.json
         question = data.get('question', '')
         item_id = data.get('item_id')
-        chat_history = data.get('chat_history', [])  # 新增：聊天历史
+        chat_history = data.get('chat_history', [])
         provider = data.get('provider')
         model = data.get('model')
+        attachments = data.get('attachments', [])
 
         context_items = []
         if item_id:
-            # 基于特定条目的对话
             manager = get_manager()
             item = manager.get_item_by_id(item_id)
             if item:
                 context_items.append(item)
-
-            # 获取相关条目作为上下文
             related_items = manager.get_related_items(item_id)
             context_items.extend(related_items)
         else:
-            # 全局对话，获取最近条目作为上下文
             manager = get_manager()
             recent_items = manager.get_recent_items(limit=5)
             context_items.extend(recent_items)
 
         ai_service = get_ai_service()
-        result = ai_service.chat_with_knowledge(question, context_items, provider=provider, model=model)
 
-        # 确保返回的是字典格式
-        if isinstance(result, dict):
-            return jsonify(result)
-        else:
-            # 如果是字符串，包装成字典
-            return jsonify({
-                "thinking": "",
-                "answer": str(result) if result else "抱歉，暂时无法回答这个问题。"
-            })
+        # Build the user message (multimodal if attachments present)
+        user_blocks = [ContentBlock(type="text", text=question)]
+        for att in attachments:
+            if att.get('type') == 'image':
+                user_blocks.append(ContentBlock(
+                    type="image_url",
+                    image_url={"url": att.get('base64', '')},
+                ))
+            elif att.get('type') == 'file':
+                text = att.get('text', '')
+                if text:
+                    user_blocks.append(ContentBlock(
+                        type="text",
+                        text=f"\n[文件: {att.get('filename', '')}]\n{text}",
+                    ))
+
+        # Build context
+        context = ''
+        if chat_history:
+            context += '对话历史:\n'
+            for msg in chat_history[-6:]:
+                role_label = '用户' if msg.get('role') == 'user' else '助手'
+                context += f"{role_label}: {msg.get('content', '')}\n"
+            context += '\n'
+        context += '当前知识上下文:\n'
+        context += '\n'.join([
+            f"标题: {item.get('title', '')}\n内容: {item.get('content', '')[:2000]}"
+            for item in context_items[:3]
+        ])
+
+        # Prepend context to the first text block
+        if context.strip():
+            user_blocks[0].text = context + '\n\n用户问题：' + question
+
+        # Resolve provider/model and call directly
+        p_name, m_name = ai_service._resolve('chat', provider, model)
+        prov = ai_service._get_provider(p_name)
+        prompt = PROMPTS['chat']
+
+        system_msg = ChatMessage.text('system', prompt['system'])
+        user_msg = ChatMessage.multimodal('user', user_blocks)
+
+        resp = prov.chat([system_msg, user_msg], model=m_name)
+
+        return jsonify({
+            'answer': resp.content,
+            'thinking': '',
+            'full_response': resp.content,
+            'model': resp.model,
+            'provider': p_name,
+        })
 
     except Exception as e:
         print(f"AI对话错误: {str(e)}")
@@ -638,6 +678,7 @@ def api_ai_rag_chat():
         provider = data.get('provider')
         model = data.get('model')
         top_k = min(data.get('top_k', 5), 10)
+        attachments = data.get('attachments', [])
 
         manager = get_manager()
 
@@ -650,14 +691,68 @@ def api_ai_rag_chat():
 
         items_with_vec = manager.get_all_embeddings()
         ai_service = get_ai_service()
-        result = ai_service.rag_chat(
-            question, items_with_vec,
-            chat_history=chat_history,
-            provider=provider, model=model,
-            top_k=top_k,
+
+        # Semantic search
+        relevant = ai_service.semantic_search(question, items_with_vec, top_k=top_k)
+
+        context = '以下是与用户问题相关的知识库内容：\n\n'
+        for i, item in enumerate(relevant):
+            context += f'【资料{i+1}】标题: {item.get("title", "")}\n'
+            context += f'内容: {(item.get("content", "") or "")[:500]}\n'
+            context += f'相关度: {item["score"]:.2f}\n\n'
+
+        chat_context = ''
+        if chat_history:
+            chat_context = '对话历史:\n'
+            for msg in chat_history[-6:]:
+                role_label = '用户' if msg.get('role') == 'user' else '助手'
+                chat_context += f'{role_label}: {msg.get("content", "")}\n'
+            chat_context += '\n'
+
+        system_prompt = (
+            '你是一个知识库助手。请基于提供的参考资料回答用户问题。\n'
+            '如果参考资料包含了相关信息，请引用具体的资料编号。\n'
+            '如果参考资料不够充分，可以结合你的知识进行补充，但要明确说明哪些来自资料、哪些来自你的知识。'
         )
 
-        return jsonify(result)
+        # Build multimodal user message
+        user_blocks = [ContentBlock(type="text", text=chat_context + context + f'\n用户问题：{question}')]
+        for att in attachments:
+            if att.get('type') == 'image':
+                user_blocks.append(ContentBlock(
+                    type="image_url",
+                    image_url={"url": att.get('base64', '')},
+                ))
+            elif att.get('type') == 'file':
+                text = att.get('text', '')
+                if text:
+                    user_blocks.append(ContentBlock(
+                        type="text",
+                        text=f"\n[文件: {att.get('filename', '')}]\n{text}",
+                    ))
+
+        p_name, m_name = ai_service._resolve('chat', provider, model)
+        prov = ai_service._get_provider(p_name)
+
+        system_msg = ChatMessage.text('system', system_prompt)
+        user_msg = ChatMessage.multimodal('user', user_blocks)
+
+        resp = prov.chat([system_msg, user_msg], model=m_name)
+
+        sources = [{
+            'id': item['id'],
+            'title': item.get('title', ''),
+            'score': item['score'],
+            'snippet': (item.get('content', '') or '')[:150],
+        } for item in relevant]
+
+        return jsonify({
+            'answer': resp.content,
+            'thinking': '',
+            'sources': sources,
+            'model': resp.model,
+            'provider': p_name,
+        })
     except Exception as e:
         return jsonify({
             'answer': f'RAG对话出错: {str(e)}',
