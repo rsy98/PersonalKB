@@ -8,9 +8,29 @@ class OllamaProvider(BaseProvider):
 
     def chat(self, messages: list[ChatMessage], model: str,
              temperature: float = 0.7, max_tokens: int = 4096, **kwargs) -> ChatResponse:
+        api_messages = []
+        for m in messages:
+            if isinstance(m.content, str):
+                api_messages.append({'role': m.role, 'content': m.content})
+            else:
+                text_parts = []
+                img_b64s = []
+                for block in m.content:
+                    if block.type == 'text':
+                        text_parts.append(block.text)
+                    elif block.type == 'image_url':
+                        url = block.image_url.get('url', '') if block.image_url else ''
+                        if url.startswith('data:'):
+                            b64 = url.split(',', 1)[-1] if ',' in url else url
+                            img_b64s.append(b64)
+                entry = {'role': m.role, 'content': '\n'.join(text_parts)}
+                if img_b64s:
+                    entry['images'] = img_b64s
+                api_messages.append(entry)
+
         payload = {
             'model': model,
-            'messages': [{'role': m.role, 'content': m.content} for m in messages],
+            'messages': api_messages,
             'stream': False,
             'options': {
                 'temperature': temperature,

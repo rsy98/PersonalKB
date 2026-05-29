@@ -1,6 +1,6 @@
 import json
 from unittest.mock import patch, MagicMock
-from ai.provider import ChatMessage, ChatResponse
+from ai.provider import ChatMessage, ChatResponse, ContentBlock
 from ai.ollama_provider import OllamaProvider
 
 
@@ -67,3 +67,32 @@ class TestOllamaProvider:
 
         provider = OllamaProvider(base_url='http://localhost:11434')
         assert provider.is_available() is False
+
+
+class TestOllamaMultimodal:
+    @patch('ai.ollama_provider.requests')
+    def test_chat_sends_images_field_for_multimodal(self, mock_requests):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            'message': {'content': 'I see a cat'},
+            'model': 'llava:latest',
+            'prompt_eval_count': 10,
+            'eval_count': 5,
+        }
+        mock_requests.post.return_value = mock_resp
+
+        provider = OllamaProvider()
+        messages = [
+            ChatMessage.multimodal("user", [
+                ContentBlock(type="text", text="What is in this image?"),
+                ContentBlock(type="image_url", image_url={"url": "data:image/png;base64,iVBORw0KGgo"}),
+            ])
+        ]
+        resp = provider.chat(messages, model='llava:latest')
+
+        call_kwargs = mock_requests.post.call_args
+        payload = call_kwargs[1]['json']
+        assert payload['messages'][0]['content'] == 'What is in this image?'
+        assert 'images' in payload['messages'][0]
+        assert payload['messages'][0]['images'] == ['iVBORw0KGgo']
+        assert resp.content == 'I see a cat'
