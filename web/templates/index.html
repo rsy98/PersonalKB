@@ -317,12 +317,21 @@
                 • 使用"改进写作"优化文本
             </div>
         </div>
-        <div class="chat-input-row">
-            <input type="text" class="chat-input" id="chatInput"
-                   placeholder="输入问题..." autocomplete="off"
-                   onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendChatMessage();event.preventDefault()}">
-            <button class="btn btn-primary" onclick="sendChatMessage()">发送</button>
-            <button class="btn btn-outline btn-sm" onclick="clearChatHistory()">清空</button>
+        <div class="chat-input-row" style="flex-direction:column;gap:8px;align-items:stretch;">
+            <div id="chatAttachmentPreviews" style="display:flex;gap:6px;flex-wrap:wrap;min-height:0;"></div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <input type="file" id="chatImageInput" accept="image/*" style="display:none;" onchange="handleChatImageAttach(this)">
+                <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('chatImageInput').click()" title="上传图片">🖼 图片</button>
+
+                <input type="file" id="chatFileInput" accept=".pdf,.docx,.txt,.md,.py,.json,.csv,.html,.css,.js,.java,.xml,.yaml,.yml,.tex,.rst,.vim" style="display:none;" onchange="handleChatFileAttach(this)">
+                <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('chatFileInput').click()" title="上传文件">📎 文件</button>
+
+                <input type="text" class="chat-input" id="chatInput"
+                       placeholder="输入问题..." autocomplete="off" style="flex:1;"
+                       onkeydown="if(event.key==='Enter'&&!event.shiftKey){sendChatMessage();event.preventDefault()}">
+                <button class="btn btn-primary" onclick="sendChatMessage()">发送</button>
+                <button class="btn btn-outline btn-sm" onclick="clearChatHistory()">清空</button>
+            </div>
         </div>
     </div>
 </section>
