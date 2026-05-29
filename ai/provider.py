@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Union
+from typing import Optional, Union
 
 
 @dataclass
@@ -8,7 +8,7 @@ class ContentBlock:
     """A multimodal content block - text or image."""
     type: str
     text: str = ""
-    image_url: dict = None
+    image_url: Optional[dict] = field(default=None)
 
 
 @dataclass
